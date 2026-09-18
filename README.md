@@ -17,6 +17,10 @@
 
 ---
 
+## Download the electron App: https://github.com/calluxpore/LoRA-Dataset-Studio/releases/tag/1.3.0
+
+---
+
 ## Features
 
 - **Fast ingestion:** add single files, whole folders (scanned recursively), webcam snapshots, or drag and drop files and folders from Explorer or Finder. Supports JPG, PNG, WEBP and BMP.
