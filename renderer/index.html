@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob: mediastream:; connect-src 'self' blob: data:; object-src 'none'; base-uri 'none'"
+  />
+  <title>LoRA Dataset Studio</title>
+  <link rel="stylesheet" href="../node_modules/cropperjs/dist/cropper.min.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ============================== TITLE BAR ============================== -->
+  <header class="titlebar">
+    <div class="titlebar-brand drag">
+      <span class="brand-mark"><i data-icon="aperture"></i></span>
+      <span class="brand-name">LoRA Dataset Studio</span>
+    </div>
+
+    <div class="titlebar-center no-drag">
+      <div class="ollama-status" id="ollamaStatus" title="Ollama connection status">
+        <span class="status-dot" id="ollamaDot"></span>
+        <span class="status-label" id="ollamaLabel">Checking Ollama…</span>
+      </div>
+      <label class="model-select-wrap" title="Vision model used for captioning">
+        <i data-icon="cpu"></i>
+        <select id="modelSelect" class="select">
+          <option value="minicpm-v4.6">minicpm-v4.6</option>
+        </select>
+      </label>
+      <button class="icon-btn" id="refreshModelsBtn" title="Re-check Ollama and refresh models">
+        <i data-icon="refresh"></i>
+      </button>
+      <button class="icon-btn" id="openSetupBtn" title="Setup Assistant: install Ollama and download the model">
+        <i data-icon="wrench"></i>
+      </button>
+    </div>
+
+    <div class="titlebar-actions no-drag">
+      <button class="btn btn-primary" id="startBatchBtn" title="Caption every item that isn't done yet (Ctrl+Enter)">
+        <i data-icon="play"></i><span>Start Batch Captioning</span>
+      </button>
+      <button class="btn" id="pauseBatchBtn" disabled title="Pause after aborting the current item">
+        <i data-icon="pause"></i><span>Pause</span>
+      </button>
+      <span class="divider-v"></span>
+      <select id="exportFormat" class="select select-compact" title="Export image format">
+        <option value="png">PNG</option>
+        <option value="jpg">JPG</option>
+      </select>
+      <button class="btn btn-accent" id="exportFolderBtn" title="Write image + .txt pairs into a folder">
+        <i data-icon="folderOut"></i><span>Export All to Folder</span>
+      </button>
+      <button class="btn" id="exportZipBtn" title="Package image + .txt pairs into a ZIP">
+        <i data-icon="archive"></i><span>ZIP</span>
+      </button>
+      <span class="divider-v"></span>
+      <div class="theme-switch" id="themeSwitch" role="radiogroup" aria-label="Theme">
+        <button class="theme-btn" data-theme="system" role="radio" title="Follow system theme"><i data-icon="monitor"></i></button>
+        <button class="theme-btn" data-theme="light" role="radio" title="Light mode"><i data-icon="sun"></i></button>
+        <button class="theme-btn" data-theme="dark" role="radio" title="Dark mode"><i data-icon="moon"></i></button>
+      </div>
+    </div>
+
+    <div class="window-controls no-drag" id="windowControls">
+      <button class="wc-btn" data-wc="minimize" title="Minimize"><i data-icon="minimize"></i></button>
+      <button class="wc-btn" data-wc="maximize" title="Maximize"><i data-icon="maximize" id="maxIcon"></i></button>
+      <button class="wc-btn wc-close" data-wc="close" title="Close"><i data-icon="x"></i></button>
+    </div>
+  </header>
+
+  <div class="offline-banner hidden" id="offlineBanner">
+    <i data-icon="alert"></i>
+    <span id="bannerMsg"></span>
+    <button class="btn btn-small btn-accent" id="bannerSetupBtn"><i data-icon="wrench"></i><span>Open Setup Assistant</span></button>
+    <button class="btn btn-small" id="retryOllamaBtn"><i data-icon="refresh"></i><span>Retry</span></button>
+  </div>
+
+  <!-- ============================== MAIN ============================== -->
+  <main class="layout">
+    <!-- ----------------------------- SIDEBAR ----------------------------- -->
+    <aside class="sidebar" id="sidebar">
+      <!-- Ingestion -->
+      <section class="panel" data-panel="ingest">
+        <button class="panel-header" aria-expanded="true"><i data-icon="download"></i><span>Ingest</span><i data-icon="chevronDown" class="panel-chevron"></i></button>
+        <div class="panel-body">
+          <div class="btn-row">
+            <button class="btn btn-block" id="selectFilesBtn"><i data-icon="image"></i><span>Select Files</span></button>
+            <button class="btn btn-block" id="selectDirBtn"><i data-icon="folder"></i><span>Select Directory</span></button>
+          </div>
+          <button class="btn btn-block" id="webcamToggleBtn"><i data-icon="camera"></i><span>Enable Webcam</span></button>
+
+          <div class="webcam hidden" id="webcamPanel">
+            <div class="webcam-view">
+              <video id="webcamVideo" autoplay playsinline muted></video>
+              <div class="webcam-flash" id="webcamFlash"></div>
+            </div>
+            <div class="btn-row">
+              <select id="webcamDevice" class="select" title="Camera device"></select>
+              <button class="btn btn-primary" id="captureBtn"><i data-icon="aperture"></i><span>Capture Snapshot</span></button>
+            </div>
+          </div>
+
+          <div class="dropzone" id="dropzone">
+            <i data-icon="upload"></i>
+            <div><strong>Drop images or folders here</strong></div>
+            <div class="muted">JPG · PNG · WEBP · BMP — folders are scanned recursively</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Resize / Crop -->
+      <section class="panel panel-amber" data-panel="crop">
+        <button class="panel-header amber-header" aria-expanded="true"><span>RESIZE / CROP</span><i data-icon="chevronDown" class="panel-chevron"></i></button>
+        <div class="panel-body">
+          <div class="field-grid">
+            <label class="field-label" for="outWidth">Width</label>
+            <div class="field-row">
+              <div class="num-input"><input type="number" id="outWidth" min="8" max="8192" step="1" value="512" /><span>px</span></div>
+              <label class="check"><input type="checkbox" id="autoWidth" /><span>Auto Width</span></label>
+            </div>
+
+            <label class="field-label" for="outHeight">Height</label>
+            <div class="field-row">
+              <div class="num-input"><input type="number" id="outHeight" min="8" max="8192" step="1" value="512" /><span>px</span></div>
+              <label class="check"><input type="checkbox" id="autoHeight" /><span>Auto height</span></label>
+            </div>
+
+            <label class="field-label" for="ratioW">Ratio</label>
+            <div class="field-row">
+              <div class="ratio-input">
+                <input type="number" id="ratioW" min="1" max="100" step="1" value="1" />
+                <span class="ratio-colon">:</span>
+                <input type="number" id="ratioH" min="1" max="100" step="1" value="1" />
+              </div>
+              <label class="check" title="Round output sizes to a multiple of 8 (friendlier for diffusion latents)">
+                <input type="checkbox" id="snap8" /><span>Snap ×8</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="chip-row" id="ratioPresets">
+            <button class="chip active" data-ratio="1:1">1:1</button>
+            <button class="chip" data-ratio="4:3">4:3</button>
+            <button class="chip" data-ratio="16:9">16:9</button>
+            <button class="chip" data-ratio="3:4">3:4</button>
+            <button class="chip" data-ratio="9:16">9:16</button>
+            <button class="chip" data-ratio="free">Freeform</button>
+          </div>
+
+          <div class="crop-workspace" id="cropWorkspace">
+            <div class="crop-empty" id="cropEmpty">
+              <i data-icon="crop"></i>
+              <span>Select a queue item to crop</span>
+            </div>
+            <div class="crop-stage hidden" id="sidebarCropStage">
+              <img id="sidebarCropImg" alt="" />
+            </div>
+            <button class="icon-btn crop-expand hidden" id="expandCropBtn" title="Open large crop editor">
+              <i data-icon="expand"></i>
+            </button>
+          </div>
+          <div class="crop-info muted" id="cropInfo">—</div>
+
+          <div class="btn-stack">
+            <button class="btn btn-block btn-accent" id="applyCropBtn" disabled><i data-icon="check"></i><span>Apply Crop to Current</span></button>
+            <button class="btn btn-block" id="batchCropBtn"><i data-icon="layers"></i><span>Batch Center-Crop All to Ratio</span></button>
+            <button class="btn btn-block" id="resetCropBtn" disabled><i data-icon="undo"></i><span>Reset</span></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Batch Renaming -->
+      <section class="panel" data-panel="rename">
+        <button class="panel-header" aria-expanded="true"><i data-icon="tag"></i><span>Batch Rename</span><i data-icon="chevronDown" class="panel-chevron"></i></button>
+        <div class="panel-body">
+          <div class="field-stack">
+            <label class="field-label" for="renamePrefix">Prefix</label>
+            <input type="text" class="text-input" id="renamePrefix" value="subject_v1" spellcheck="false" />
+          </div>
+          <div class="field-pair">
+            <div class="field-stack">
+              <label class="field-label" for="renameStart">Start index</label>
+              <input type="number" class="text-input" id="renameStart" min="0" value="1" />
+            </div>
+            <div class="field-stack">
+              <label class="field-label" for="renamePad">Digit padding</label>
+              <input type="number" class="text-input" id="renamePad" min="1" max="8" value="3" />
+            </div>
+          </div>
+          <div class="preview-pills" id="renamePreview"></div>
+          <button class="btn btn-block" id="applyRenameBtn"><i data-icon="tag"></i><span>Apply Batch Rename</span></button>
+        </div>
+      </section>
+
+      <!-- Caption settings -->
+      <section class="panel" data-panel="caption">
+        <button class="panel-header" aria-expanded="true"><i data-icon="message"></i><span>Caption Settings</span><i data-icon="chevronDown" class="panel-chevron"></i></button>
+        <div class="panel-body">
+          <div class="field-stack">
+            <label class="field-label" for="captionPrompt">Prompt</label>
+            <textarea class="text-input" id="captionPrompt" rows="5" spellcheck="false"></textarea>
+          </div>
+          <div class="field-stack">
+            <label class="field-label" for="captionPrefix">Trigger word / caption prefix</label>
+            <input type="text" class="text-input" id="captionPrefix" placeholder="e.g. ohwx person," spellcheck="false" />
+          </div>
+          <div class="field-pair">
+            <div class="field-stack">
+              <label class="field-label" for="captionTemp">Temperature</label>
+              <input type="number" class="text-input" id="captionTemp" min="0" max="2" step="0.05" value="0.2" />
+            </div>
+            <div class="field-stack">
+              <label class="field-label" for="captionMaxDim">Send size (px)</label>
+              <input type="number" class="text-input" id="captionMaxDim" min="224" max="2048" step="32" value="896" />
+            </div>
+          </div>
+          <label class="check"><input type="checkbox" id="captionSingleLine" checked /><span>Collapse caption to a single line</span></label>
+          <label class="check"><input type="checkbox" id="captionSkipDone" checked /><span>Batch skips items already captioned</span></label>
+          <div class="field-stack">
+            <label class="field-label" for="ollamaHost">Ollama host</label>
+            <input type="text" class="text-input" id="ollamaHost" value="http://localhost:11434" spellcheck="false" />
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <!-- ----------------------------- WORKBENCH ----------------------------- -->
+    <section class="workbench">
+      <div class="workbench-toolbar">
+        <div class="stats" id="queueStats">
+          <span class="stat"><b id="statTotal">0</b> items</span>
+          <span class="stat stat-done"><b id="statDone">0</b> done</span>
+          <span class="stat stat-proc"><b id="statProc">0</b> processing</span>
+          <span class="stat stat-err"><b id="statErr">0</b> errors</span>
+        </div>
+        <div class="progress" id="batchProgress"><div class="progress-fill" id="batchProgressFill"></div></div>
+        <div class="toolbar-right">
+          <div class="search">
+            <i data-icon="search"></i>
+            <input type="search" id="queueFilter" placeholder="Filter by name or caption" spellcheck="false" />
+          </div>
+          <div class="seg" id="viewToggle">
+            <button class="seg-btn active" data-view="grid" title="Grid view"><i data-icon="grid"></i></button>
+            <button class="seg-btn" data-view="list" title="List view"><i data-icon="list"></i></button>
+          </div>
+          <button class="btn btn-small btn-danger-ghost" id="clearQueueBtn" title="Remove all items"><i data-icon="trash"></i><span>Clear</span></button>
+        </div>
+      </div>
+
+      <div class="selection-bar hidden" id="selectionBar">
+        <span class="sel-count"><i data-icon="check"></i><b id="selCount">0</b> selected</span>
+        <button class="btn btn-small btn-accent" id="selCropBtn" title="Center-crop the selected images to the Width / Height / Ratio set in the sidebar">
+          <i data-icon="layers"></i><span>Center-Crop to Sidebar Size</span>
+        </button>
+        <button class="btn btn-small" id="selApplyCropBtn" title="Apply the current crop box (same position and zoom) to every selected image">
+          <i data-icon="crop"></i><span>Apply Current Crop Box</span>
+        </button>
+        <button class="btn btn-small" id="selCaptionBtn" title="Caption (or re-caption) the selected images">
+          <i data-icon="sparkles"></i><span>Caption Selected</span>
+        </button>
+        <button class="btn btn-small btn-danger-ghost" id="selDeleteBtn" title="Remove the selected images from the queue (Delete)">
+          <i data-icon="trash"></i><span>Remove</span>
+        </button>
+        <span class="sel-hint muted">Drag · Ctrl+A · Ctrl/Shift+click · Esc clears</span>
+        <button class="icon-btn" id="selClearBtn" title="Clear selection (Esc)"><i data-icon="x"></i></button>
+      </div>
+
+      <div class="queue-scroll" id="queueScroll">
+        <div class="queue-empty" id="queueEmpty">
+          <div class="queue-empty-icon"><i data-icon="images"></i></div>
+          <h2>Your dataset queue is empty</h2>
+          <p>Add images with <b>Select Files</b>, <b>Select Directory</b>, the webcam, or drag files/folders anywhere onto this window.</p>
+        </div>
+        <div class="queue grid" id="queue"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================== SETUP ASSISTANT ============================== -->
+  <div class="modal hidden" id="setupModal" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+    <div class="modal-card setup-card">
+      <div class="modal-header amber-header">
+        <span id="setupTitle">SETUP ASSISTANT</span>
+        <button class="icon-btn" id="setupCloseBtn" title="Close (Esc)"><i data-icon="x"></i></button>
+      </div>
+      <div class="setup-body">
+        <p class="setup-intro">
+          LoRA Dataset Studio writes captions with a <b>local</b> vision model through <b>Ollama</b>.
+          Your images never leave this computer. Captioning needs these two things:
+        </p>
+
+        <section class="setup-step" id="stepOllama">
+          <div class="step-status pending" id="stepOllamaIcon"></div>
+          <div class="step-main">
+            <div class="step-title">1 · Ollama installed and running</div>
+            <div class="step-detail" id="stepOllamaDetail">Checking…</div>
+            <div class="step-progress hidden" id="installProgress">
+              <div class="progress"><div class="progress-fill" id="installProgressFill"></div></div>
+              <span class="muted" id="installProgressText"></span>
+            </div>
+            <div class="step-actions" id="stepOllamaActions"></div>
+            <details class="step-manual">
+              <summary>Manual instructions</summary>
+              <div class="manual-body" id="ollamaManual"></div>
+            </details>
+          </div>
+        </section>
+
+        <section class="setup-step" id="stepModel">
+          <div class="step-status pending" id="stepModelIcon"></div>
+          <div class="step-main">
+            <div class="step-title">2 · Vision model <code id="setupModelName">minicpm-v4.6</code> downloaded</div>
+            <div class="step-detail" id="stepModelDetail">Waiting for Ollama…</div>
+            <div class="step-progress hidden" id="pullProgress">
+              <div class="progress"><div class="progress-fill" id="pullProgressFill"></div></div>
+              <span class="muted" id="pullProgressText"></span>
+            </div>
+            <div class="step-actions" id="stepModelActions"></div>
+            <details class="step-manual">
+              <summary>Manual instructions</summary>
+              <div class="manual-body" id="modelManual"></div>
+            </details>
+          </div>
+        </section>
+      </div>
+      <div class="modal-footer">
+        <label class="check"><input type="checkbox" id="setupShowOnLaunch" checked /><span>Show at launch if setup is incomplete</span></label>
+        <div class="modal-footer-actions">
+          <button class="btn" id="setupRecheckBtn"><i data-icon="refresh"></i><span>Re-check</span></button>
+          <button class="btn btn-accent" id="setupDoneBtn"><span>Close</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== CROP MODAL ============================== -->
+  <div class="modal hidden" id="cropModal" role="dialog" aria-modal="true" aria-labelledby="cropModalTitle">
+    <div class="modal-card">
+      <div class="modal-header amber-header">
+        <span id="cropModalTitle">RESIZE / CROP — <span id="cropModalName"></span></span>
+        <button class="icon-btn" id="closeCropModalBtn" title="Close (Esc)"><i data-icon="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-stage"><img id="modalCropImg" alt="" /></div>
+      </div>
+      <div class="modal-footer">
+        <div class="muted" id="modalCropInfo">—</div>
+        <div class="modal-footer-actions">
+          <button class="btn" id="modalPrevBtn" title="Previous item (←)"><i data-icon="chevronLeft"></i></button>
+          <button class="btn" id="modalNextBtn" title="Next item (→)"><i data-icon="chevronRight"></i></button>
+          <button class="btn" id="modalResetBtn"><i data-icon="undo"></i><span>Reset</span></button>
+          <button class="btn btn-accent" id="modalApplyBtn"><i data-icon="check"></i><span>Apply Crop</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full-window drag overlay -->
+  <div class="drop-overlay hidden" id="dropOverlay">
+    <div class="drop-overlay-inner"><i data-icon="upload"></i><span>Drop to add to queue</span></div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <template id="cardTemplate">
+    <article class="card" tabindex="0">
+      <div class="card-thumb">
+        <img class="thumb-img" alt="" draggable="false" />
+        <span class="pill status-pill">Queued</span>
+        <span class="crop-badge hidden" title="Custom crop applied"><i data-icon="crop"></i></span>
+        <span class="sel-check" aria-hidden="true"><i data-icon="check"></i></span>
+        <div class="thumb-overlay"><i data-icon="crop"></i><span>Inspect / Crop</span></div>
+      </div>
+      <div class="card-body">
+        <div class="card-meta">
+          <span class="card-name" title=""></span>
+          <span class="card-dims"></span>
+        </div>
+        <textarea class="caption" rows="4" placeholder="Caption will stream here… (editable)" spellcheck="true"></textarea>
+        <div class="card-footer">
+          <span class="char-count muted">0 chars</span>
+          <div class="card-actions">
+            <button class="icon-btn act-regen" title="Regenerate caption"><i data-icon="sparkles"></i></button>
+            <button class="icon-btn act-view" title="Open in native viewer"><i data-icon="external"></i></button>
+            <button class="icon-btn act-delete danger" title="Delete from queue"><i data-icon="trash"></i></button>
+          </div>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script src="../node_modules/cropperjs/dist/cropper.min.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

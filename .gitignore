@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Build output (electron-builder)
+dist/
+out/
+release/
+*.blockmap
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Caches
+.cache/
+.eslintcache
+.npm/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Code-signing material (never commit)
+*.p12
+*.pfx
+*.cer
+*.key
+*.pem
+
+# Exported datasets and test output
+*.zip
+exports/
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
