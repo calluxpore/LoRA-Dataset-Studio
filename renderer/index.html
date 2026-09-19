@@ -35,6 +35,9 @@
       <button class="icon-btn" id="openSetupBtn" title="Setup Assistant: install Ollama and download the model">
         <i data-icon="wrench"></i>
       </button>
+      <button class="icon-btn" id="openSettingsBtn" title="Settings">
+        <i data-icon="settings"></i>
+      </button>
     </div>
 
     <div class="titlebar-actions no-drag">
@@ -81,9 +84,30 @@
   <main class="layout">
     <!-- ----------------------------- SIDEBAR ----------------------------- -->
     <aside class="sidebar" id="sidebar">
+      <!-- Dataset (step 1): named, saved project folder -->
+      <section class="panel step-pending" data-panel="dataset">
+        <button class="panel-header" aria-expanded="true"><span class="step-badge">1</span><i data-icon="database"></i><span>Dataset</span><span class="step-state"></span><i data-icon="chevronDown" class="panel-chevron"></i></button>
+        <div class="panel-body">
+          <div class="dataset-form">
+            <input type="text" class="text-input" id="datasetNameInput" maxlength="80" placeholder="New dataset name, e.g. Anime" spellcheck="false" />
+            <button class="btn btn-accent" id="datasetSubmitBtn"><i data-icon="plus"></i><span>Create</span></button>
+            <button class="icon-btn hidden" id="datasetCancelBtn" title="Cancel (Esc)"><i data-icon="x"></i></button>
+          </div>
+          <div class="dataset-list" id="datasetList" role="listbox" aria-label="Datasets"></div>
+          <div class="btn-row dataset-actions">
+            <button class="btn btn-small" id="datasetOpenFolderBtn" title="Show this dataset's folder"><i data-icon="folder"></i><span>Open Folder</span></button>
+            <button class="btn btn-small" id="datasetRenameBtn" title="Rename this dataset"><i data-icon="pencil"></i><span>Rename</span></button>
+            <button class="btn btn-small btn-danger-ghost" id="datasetDeleteBtn" title="Move this dataset to the Recycle Bin"><i data-icon="trash"></i><span>Delete</span></button>
+          </div>
+          <div class="dataset-foot muted">
+            <span class="dataset-save" id="datasetSaveState"></span>
+          </div>
+        </div>
+      </section>
+
       <!-- Ingestion -->
       <section class="panel step-pending" data-panel="ingest">
-        <button class="panel-header" aria-expanded="true"><span class="step-badge">1</span><i data-icon="download"></i><span>Ingest</span><span class="step-state"></span><i data-icon="chevronDown" class="panel-chevron"></i></button>
+        <button class="panel-header" aria-expanded="true"><span class="step-badge">2</span><i data-icon="download"></i><span>Ingest</span><span class="step-state"></span><i data-icon="chevronDown" class="panel-chevron"></i></button>
         <div class="panel-body">
           <div class="btn-row">
             <button class="btn btn-block" id="selectFilesBtn"><i data-icon="image"></i><span>Select Files</span></button>
@@ -112,7 +136,7 @@
 
       <!-- Resize / Crop -->
       <section class="panel step-pending" data-panel="crop">
-        <button class="panel-header" aria-expanded="true"><span class="step-badge">2</span><i data-icon="crop"></i><span>Resize / Crop</span><span class="step-state"></span><i data-icon="chevronDown" class="panel-chevron"></i></button>
+        <button class="panel-header" aria-expanded="true"><span class="step-badge">3</span><i data-icon="crop"></i><span>Resize / Crop</span><span class="step-state"></span><i data-icon="chevronDown" class="panel-chevron"></i></button>
         <div class="panel-body">
           <div class="field-grid">
             <label class="field-label" for="outWidth">Width</label>
@@ -173,7 +197,7 @@
 
       <!-- Batch Renaming -->
       <section class="panel step-pending" data-panel="rename">
-        <button class="panel-header" aria-expanded="true"><span class="step-badge">3</span><i data-icon="tag"></i><span>Batch Rename</span><span class="step-state"></span><i data-icon="chevronDown" class="panel-chevron"></i></button>
+        <button class="panel-header" aria-expanded="true"><span class="step-badge">4</span><i data-icon="tag"></i><span>Batch Rename</span><span class="step-state"></span><i data-icon="chevronDown" class="panel-chevron"></i></button>
         <div class="panel-body">
           <div class="field-stack">
             <label class="field-label" for="renamePrefix">Prefix</label>
@@ -196,7 +220,7 @@
 
       <!-- Caption settings -->
       <section class="panel step-pending" data-panel="caption">
-        <button class="panel-header" aria-expanded="true"><span class="step-badge">4</span><i data-icon="message"></i><span>Caption Settings</span><span class="step-state"></span><i data-icon="chevronDown" class="panel-chevron"></i></button>
+        <button class="panel-header" aria-expanded="true"><span class="step-badge">5</span><i data-icon="message"></i><span>Caption Settings</span><span class="step-state"></span><i data-icon="chevronDown" class="panel-chevron"></i></button>
         <div class="panel-body">
           <div class="field-stack">
             <label class="field-label" for="captionPrompt">Prompt</label>
@@ -254,7 +278,7 @@
             <button class="seg-btn active" data-view="grid" title="Grid view"><i data-icon="grid"></i></button>
             <button class="seg-btn" data-view="list" title="List view"><i data-icon="list"></i></button>
           </div>
-          <button class="btn btn-small btn-danger-ghost" id="clearQueueBtn" title="Remove all items"><i data-icon="trash"></i><span>Clear</span></button>
+          <button class="btn btn-small btn-danger-ghost" id="clearQueueBtn" title="Remove all images from this dataset"><i data-icon="trash"></i><span>Clear</span></button>
         </div>
       </div>
 
@@ -334,6 +358,69 @@
     </div>
   </div>
 
+  <!-- ============================== SETTINGS ============================== -->
+  <div class="modal hidden" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal-card small-card">
+      <div class="modal-header accent-header">
+        <span id="settingsTitle">SETTINGS</span>
+        <button class="icon-btn" id="settingsCloseBtn" title="Close (Esc)"><i data-icon="x"></i></button>
+      </div>
+      <div class="dialog-body">
+        <section class="settings-section">
+          <h3><i data-icon="database"></i>Datasets folder</h3>
+          <p class="muted">All datasets are stored here, one folder per dataset.</p>
+          <div class="path-box" id="settingsRootPath" title="Datasets folder"></div>
+          <div class="btn-row settings-actions">
+            <button class="btn btn-accent" id="settingsChangeRootBtn"><i data-icon="folder"></i><span>Change folder…</span></button>
+            <button class="btn" id="settingsOpenRootBtn"><i data-icon="external"></i><span>Open folder</span></button>
+            <button class="btn" id="settingsResetRootBtn" title="Documents\LoRA Dataset Studio\Datasets"><i data-icon="undo"></i><span>Use default</span></button>
+          </div>
+          <p class="muted settings-note">
+            Changing the folder closes the open dataset. Datasets already in the old folder stay there;
+            move their folders across to keep using them.
+          </p>
+        </section>
+      </div>
+      <div class="modal-footer">
+        <span></span>
+        <div class="modal-footer-actions">
+          <button class="btn btn-accent" id="settingsDoneBtn"><span>Done</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== DROP TARGET ============================== -->
+  <div class="modal hidden" id="dropTargetModal" role="dialog" aria-modal="true" aria-labelledby="dropTargetTitle">
+    <div class="modal-card small-card">
+      <div class="modal-header accent-header">
+        <span id="dropTargetTitle">ADD IMAGES TO…</span>
+        <button class="icon-btn" id="dropTargetCloseBtn" title="Cancel (Esc)"><i data-icon="x"></i></button>
+      </div>
+      <div class="dialog-body">
+        <p class="muted" id="dropTargetSummary"></p>
+        <div class="target-options" id="dropTargetOptions" role="radiogroup" aria-label="Destination dataset">
+          <label class="target-option target-new">
+            <input type="radio" name="dropTarget" value="" />
+            <i data-icon="plus"></i>
+            <span class="target-main">
+              <span class="target-name">New dataset</span>
+              <input type="text" class="text-input" id="dropNewName" maxlength="80" placeholder="Name, e.g. Anime" spellcheck="false" />
+            </span>
+          </label>
+          <div class="target-list" id="dropTargetList"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span></span>
+        <div class="modal-footer-actions">
+          <button class="btn" id="dropTargetCancelBtn"><span>Cancel</span></button>
+          <button class="btn btn-accent" id="dropTargetAddBtn"><i data-icon="plus"></i><span>Add images</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ============================== CROP MODAL ============================== -->
   <div class="modal hidden" id="cropModal" role="dialog" aria-modal="true" aria-labelledby="cropModalTitle">
     <div class="modal-card">
@@ -358,7 +445,7 @@
 
   <!-- Full-window drag overlay -->
   <div class="drop-overlay hidden" id="dropOverlay">
-    <div class="drop-overlay-inner"><i data-icon="upload"></i><span>Drop to add to queue</span></div>
+    <div class="drop-overlay-inner"><i data-icon="upload"></i><span>Drop to add to a dataset</span></div>
   </div>
 
   <div class="toasts" id="toasts"></div>

@@ -1842,3 +1842,245 @@ input[type='number']::-webkit-inner-spin-button {
 .sb-empty {
   color: var(--text-faint);
 }
+
+/* ------------------------------ Datasets ------------------------------ */
+
+.dataset-form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.dataset-form .text-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+}
+.dataset-form.renaming .text-input {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.dataset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.dataset-list:empty::before {
+  content: 'No datasets yet. Name your first one above.';
+  display: block;
+  padding: 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: center;
+}
+.dataset-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+}
+.dataset-row:hover {
+  background: var(--hover);
+}
+.dataset-row .icon {
+  color: var(--text-faint);
+}
+.dataset-row.active {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.dataset-row.active .icon {
+  color: var(--accent-text);
+}
+.dataset-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dataset-row-name {
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dataset-row-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.dataset-row-open {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--accent-text);
+}
+.dataset-actions .btn {
+  flex: 1;
+}
+.dataset-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.dataset-foot a {
+  color: var(--link);
+  text-decoration: none;
+}
+.dataset-foot a:hover {
+  text-decoration: underline;
+}
+.dataset-root a#datasetRootPath {
+  word-break: break-all;
+}
+.dataset-save.saving {
+  color: var(--busy);
+}
+.dataset-save.saved {
+  color: var(--green);
+}
+.dataset-save.error {
+  color: var(--red);
+}
+.panel.attention {
+  animation: attention 1.2s ease-out;
+}
+@keyframes attention {
+  0%, 60% {
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+}
+
+/* ------------------------------ Settings & drop-target dialogs ------------------------------ */
+
+.small-card {
+  width: min(560px, 100%);
+  height: auto;
+  max-height: 100%;
+}
+.dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dialog-body > p {
+  margin: 0;
+}
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.settings-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13.5px;
+}
+.settings-section p {
+  margin: 0;
+}
+.path-box {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 12px;
+  word-break: break-all;
+  user-select: text;
+}
+.settings-actions .btn {
+  flex: 0 1 auto;
+}
+.settings-note {
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.target-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.target-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.target-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  cursor: pointer;
+}
+.target-option:hover {
+  border-color: var(--border-strong);
+}
+.target-option input[type='radio'] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.target-option > .icon {
+  color: var(--text-faint);
+}
+.target-option.selected {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.target-option.selected > .icon {
+  color: var(--accent-text);
+}
+.target-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.target-name {
+  font-weight: 650;
+}
+.target-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.target-new .text-input {
+  height: 30px;
+}
+.target-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--accent-text);
+}
+.shake {
+  animation: shake 0.3s ease;
+}
+@keyframes shake {
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}

@@ -23,6 +23,7 @@
 
 ## Features
 
+- **Saved datasets:** name a dataset (for example *Anime*) and everything you add is copied into its own folder. Crops, names and captions save automatically, and the dataset reopens exactly as you left it. You can keep several datasets and switch between them, similar to the Datasets tab in Ostris AI Toolkit.
 - **Fast ingestion:** add single files, whole folders (scanned recursively), webcam snapshots, or drag and drop files and folders from Explorer or Finder. Supports JPG, PNG, WEBP and BMP.
 - **Interactive cropping:** a Cropper.js editor in the sidebar plus a large crop window, with ratio presets (1:1, 4:3, 16:9, 3:4, 9:16, Freeform), fixed or automatic width and height, and optional snapping to multiples of 8.
 - **Bulk operations:** select images with a drag box, **Ctrl+A** or **Ctrl/Shift+click**, then center-crop them all to your target size, copy one crop box onto every selected image, caption them, or remove them.
@@ -31,7 +32,7 @@
 - **Batch rename:** `prefix_001`, `prefix_002`, … with a live preview.
 - **Export:** paired `name.png|jpg` and `name.txt` files written straight to a folder or packed into a single ZIP. You get an OS notification and an *Open Folder* shortcut when it finishes.
 - **Setup Assistant:** shows whether Ollama is running and the model is downloaded, with three short steps (install Ollama, pull the model, run it) and copyable commands.
-- **Guided workflow:** the sidebar panels are numbered steps (Ingest → Resize / Crop → Rename → Caption). Steps still to do are highlighted and finished ones fade with a ✓. A status bar at the bottom summarizes the dataset: images, cropped, renamed, captioned, failed, ready to export and selected.
+- **Guided workflow:** the sidebar panels are numbered steps (Dataset → Ingest → Resize / Crop → Rename → Caption). Steps still to do are highlighted and finished ones fade with a ✓. A status bar at the bottom summarizes the dataset: images, cropped, renamed, captioned, failed, ready to export and selected.
 - **Light, dark and system themes** in pastel colors, a borderless window, collapsible sidebar panels, and a grid or list view.
 
 <table>
@@ -86,13 +87,14 @@ The app talks to Ollama from the Electron main process, so you **don't** need to
 
 ## Usage
 
-1. **Ingest:** click *Select Files* or *Select Directory*, turn on the webcam, or drop files or folders anywhere on the window.
-2. **Resize / Crop:** set **Width**, **Height** and **Ratio** in the amber *RESIZE / CROP* panel.
+1. **Dataset:** type a name such as *Anime* and click **Create**, or click an existing dataset to open it. The last dataset you used reopens automatically. See [Datasets](#datasets).
+2. **Ingest:** click *Select Files* or *Select Directory*, turn on the webcam, or drop files or folders anywhere on the window. When you drop images, the app asks which dataset they belong to: pick one (the open dataset is pre-selected) or name a new one. Images are copied into the dataset; your originals are never changed.
+3. **Resize / Crop:** set **Width**, **Height** and **Ratio** in the *Resize / Crop* panel.
    - To crop everything: press **Ctrl+A**, then click **Center-Crop N Selected to Ratio**.
    - To crop one image: select it, adjust the box, then click **Apply Crop to Current**. Click a thumbnail to open the large editor.
    - To reuse one framing: position the box on one image, select several, then click **Apply Crop Box to N Selected**.
-3. **Rename:** enter a prefix, start index and zero padding, then click **Apply Batch Rename**.
-4. **Caption:** in *Caption Settings*, pick the preset that matches your LoRA. Each one sets the prompt, temperature and send size:
+4. **Rename:** enter a prefix, start index and zero padding, then click **Apply Batch Rename**.
+5. **Caption:** in *Caption Settings*, pick the preset that matches your LoRA. Each one sets the prompt, temperature and send size:
 
    | Preset | Use for | What the caption leaves out | Temp | Send size |
    | --- | --- | --- | --- | --- |
@@ -102,11 +104,28 @@ The app talks to Ollama from the Electron main process, so you **don't** need to
    | **General** | Fine-tunes, Flux/SD3 | Nothing, describes everything | 0.25 | 1024 |
 
    Whatever the caption leaves out is what your trigger word learns. Put the trigger word in *Trigger word / caption prefix*. Then click **Start Batch Captioning**. Edit captions directly in each card, and use ✦ to regenerate one.
-5. **Export:** choose PNG or JPG, then **Export All to Folder** or **ZIP**.
+6. **Export:** choose PNG or JPG, then **Export All to Folder** or **ZIP**. The save dialog starts in the dataset's folder.
 
 **How export sizes work:**
 - Uncropped images are exported at their original resolution.
 - If the crop box's aspect ratio doesn't match the target W×H, the crop is trimmed evenly from the edges, so images are **never stretched**.
+
+### Datasets
+
+Each dataset is a folder in your datasets library. By default that's `Documents\LoRA Dataset Studio\Datasets`. To use another location, open **Settings** (⚙ in the title bar) and click **Change folder…**, or **Use default** to go back.
+
+```
+Datasets/
+  Anime/
+    images/        copies of every image you added
+    dataset.json   order, names, crops, captions and statuses
+```
+
+- **Autosave:** every change is saved within a second, and anything pending is written when the window closes.
+- **Removing** an image or **deleting** a dataset moves the files to the Recycle Bin, so they can be restored.
+- **Existing folders:** a folder in the library without a `dataset.json` (for example an Ostris AI Toolkit dataset of `image.png` + `image.txt` pairs) still appears in the list. Opening it imports the images and their captions.
+- **Unreadable images** stay in `dataset.json` and are never removed automatically. Only entries whose files were deleted from disk are dropped.
+- **One window at a time:** launching the app again focuses the open window, so two copies never edit the same dataset.
 
 ### Keyboard shortcuts
 
@@ -145,6 +164,7 @@ npm run dist:linux   # AppImage
 
 ```
 ├── main.js             # Main process: window, dialogs, file I/O, Ollama streaming proxy, export (JSZip), theme
+├── datasets.js         # Datasets: create/open/rename/delete, copy images in, autosave dataset.json
 ├── preload.js          # contextBridge → window.electronAPI
 ├── renderer/
 │   ├── index.html      # Layout, dialogs, card template
@@ -161,7 +181,7 @@ npm run dist:linux   # AppImage
 - **Security:** the renderer runs with `contextIsolation: true`, `sandbox: true` and `nodeIntegration: false`, behind a strict CSP. Every file-system and network call goes through a small IPC API exposed in `preload.js`.
 - **Streaming captions:** `/api/generate` is called with `stream: true`, and each NDJSON line is forwarded to the renderer as a `caption-token` event. For models that report the `thinking` capability, `think: false` is sent so captions start right away.
 - **Image processing:** crop and resize are done with `createImageBitmap` (high-quality resampling) and canvas encoding, so there's no native `sharp` dependency.
-- **Storage:** settings are kept in `localStorage`. The theme is kept in `userData/preferences.json` so it applies before the window paints.
+- **Storage:** each dataset is a folder with an `images/` folder and a `dataset.json` (see [Datasets](#datasets)). App settings are kept in `localStorage`. The theme is kept in `userData/preferences.json` so it applies before the window paints.
 
 ## Troubleshooting
 

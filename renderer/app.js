@@ -98,6 +98,7 @@ const state = {
   ollama: { online: false, checking: false, models: [], capabilities: new Map() },
   batch: { running: false, pauseRequested: false, currentId: null, attempted: new Set(), errors: 0 },
   webcam: { stream: null },
+  dataset: null, // { name, dir } of the open dataset
   crop: { cropper: null, host: null, itemId: null },
   settings: loadSettings(),
 };
@@ -126,6 +127,7 @@ function defaultSettings() {
     exportFormat: 'png',
     view: 'grid',
     collapsedPanels: [],
+    lastDataset: null,
     showSetupOnLaunch: true,
   };
 }
@@ -171,6 +173,11 @@ function cacheDom() {
     'clearQueueBtn', 'queueScroll', 'queueEmpty', 'queue', 'cropModal', 'cropModalName', 'closeCropModalBtn',
     'modalCropImg', 'modalCropInfo', 'modalPrevBtn', 'modalNextBtn', 'modalResetBtn', 'modalApplyBtn',
     'dropOverlay', 'toasts', 'cardTemplate', 'maxIcon', 'windowControls',
+    'datasetNameInput', 'datasetSubmitBtn', 'datasetCancelBtn', 'datasetList', 'datasetOpenFolderBtn', 'datasetRenameBtn',
+    'datasetDeleteBtn', 'datasetSaveState', 'openSettingsBtn', 'settingsModal', 'settingsCloseBtn', 'settingsDoneBtn',
+    'settingsRootPath', 'settingsChangeRootBtn', 'settingsOpenRootBtn', 'settingsResetRootBtn', 'dropTargetModal',
+    'dropTargetTitle', 'dropTargetSummary', 'dropTargetOptions', 'dropTargetList', 'dropNewName', 'dropTargetAddBtn',
+    'dropTargetCancelBtn', 'dropTargetCloseBtn',
     'selectionBar', 'selCount', 'selCropBtn', 'selApplyCropBtn', 'selCaptionBtn', 'selDeleteBtn', 'selClearBtn',
   ];
   for (const id of ids) el[id] = document.getElementById(id);
@@ -361,7 +368,17 @@ async function refreshThumb(item) {
 // Queue items & cards
 // ---------------------------------------------------------------------------
 
-async function addItemFromBlob(blob, { sourcePath = null, fileName, sourceFormat }) {
+/**
+ * Add an image to the queue.
+ * @param {Blob} blob
+ * @param {object} opts
+ * @param {string|null} opts.sourcePath  absolute path of the file on disk (the dataset copy)
+ * @param {string} opts.fileName         display / original file name
+ * @param {string|null} opts.file        path relative to the dataset folder, e.g. "images/a.png"
+ * @param {string|null} opts.origin      where the image was imported from (used to skip duplicates)
+ * @param {object|null} opts.restore     saved state when reopening a dataset
+ */
+async function addItemFromBlob(blob, { sourcePath = null, fileName, sourceFormat, file = null, origin = null, restore = null }) {
   let bmp;
   try {
     bmp = await decodeLimit(() => createImageBitmap(blob));
@@ -389,8 +406,22 @@ async function addItemFromBlob(blob, { sourcePath = null, fileName, sourceFormat
     genId: null,
     genSeq: 0,
     refs: null,
+    file,
+    origin,
   };
   bmp.close();
+
+  if (restore) {
+    item.originalName = restore.originalName || item.originalName;
+    item.name = restore.name || item.name;
+    item.caption = restore.caption || '';
+    item.status = ['done', 'error'].includes(restore.status) ? restore.status : 'queued';
+    if (restore.crop && restore.outW && restore.outH) {
+      item.crop = restore.crop;
+      item.outW = restore.outW;
+      item.outH = restore.outH;
+    }
+  }
 
   state.items.push(item);
   state.byId.set(item.id, item);
@@ -440,6 +471,7 @@ function createCard(item) {
     item.caption = refs.caption.value;
     updateCharCount(item);
     scheduleStepUpdate();
+    scheduleDatasetSave();
   });
   refs.caption.addEventListener('focus', () => selectItem(item.id, { scroll: false }));
 
@@ -530,13 +562,14 @@ function updateStats() {
   el.queueEmpty.classList.toggle('hidden', total > 0);
   updateRenamePreview();
   scheduleStepUpdate();
+  scheduleDatasetSave();
 }
 
 // ---------------------------------------------------------------------------
 // Workflow steps: sidebar panels highlight while their step is still to do
 // ---------------------------------------------------------------------------
 
-const STEP_ORDER = ['ingest', 'crop', 'rename', 'caption'];
+const STEP_ORDER = ['dataset', 'ingest', 'crop', 'rename', 'caption'];
 let stepUpdateQueued = false;
 
 /** Queue progress in one pass, derived from the items so it stays correct as they change. */
@@ -564,6 +597,7 @@ function computeProgress() {
 function computeSteps(p = computeProgress()) {
   const n = p.total;
   return {
+    dataset: { done: !!state.dataset, count: 0, total: 0, what: '' },
     ingest: { done: n > 0, count: n, total: n, what: 'images added' },
     crop: { done: n > 0 && p.cropped === n, count: p.cropped, total: n, what: 'cropped' },
     rename: { done: n > 0 && p.renamed === n, count: p.renamed, total: n, what: 'renamed' },
@@ -575,8 +609,13 @@ function computeSteps(p = computeProgress()) {
 function updateStatusBar(p) {
   const bar = document.getElementById('statusStats');
   if (!bar) return;
+  if (!state.dataset) {
+    bar.innerHTML = `<span class="sb-item sb-empty">${iconSvg('database', 13)}No dataset open. Create one in step 1 to get started</span>`;
+    return;
+  }
+  const datasetItem = `<span class="sb-item accent" title="Current dataset">${iconSvg('database', 13)}<span><b>${escapeHtml(state.dataset.name)}</b></span></span>`;
   if (!p.total) {
-    bar.innerHTML = `<span class="sb-item sb-empty">${iconSvg('images', 13)}No images yet. Add some to get started</span>`;
+    bar.innerHTML = `${datasetItem}<span class="sb-sep"></span><span class="sb-item sb-empty">${iconSvg('images', 13)}No images yet. Add some in step 2</span>`;
     return;
   }
   const plural = (n, word) => `${word}${n === 1 ? '' : 's'}`;
@@ -599,9 +638,10 @@ function updateStatusBar(p) {
   });
   if (p.selected > 1) items.push({ icon: 'check', cls: 'accent', html: `<b>${p.selected}</b> selected`, title: 'Selected images' });
 
-  bar.innerHTML = items
-    .map((it) => `<span class="sb-item ${it.cls || ''}" title="${escapeHtml(it.title)}">${iconSvg(it.icon, 13)}<span>${it.html}</span></span>`)
-    .join('<span class="sb-sep"></span>');
+  const rendered = items.map(
+    (it) => `<span class="sb-item ${it.cls || ''}" title="${escapeHtml(it.title)}">${iconSvg(it.icon, 13)}<span>${it.html}</span></span>`,
+  );
+  bar.innerHTML = [datasetItem, ...rendered].join('<span class="sb-sep"></span>');
 }
 
 function scheduleStepUpdate() {
@@ -629,13 +669,17 @@ function updateStepStates() {
     const header = panel.querySelector('.panel-header');
     if (s.done) {
       badge.innerHTML = iconSvg('check', 12);
-      label.textContent = 'Done';
+      label.textContent = key === 'dataset' ? state.dataset.name : 'Done';
     } else {
       badge.textContent = String(i + 1);
-      label.textContent = key === 'ingest' ? 'Start here' : s.total ? `${s.count}/${s.total}` : '';
+      label.textContent = key === 'dataset' ? 'Start here' : key === 'ingest' ? '' : s.total ? `${s.count}/${s.total}` : '';
     }
     header.title =
-      key === 'ingest'
+      key === 'dataset'
+        ? s.done
+          ? `Dataset: ${state.dataset.name}`
+          : 'Create or open a dataset to start'
+        : key === 'ingest'
         ? s.done
           ? `${s.total} image${s.total === 1 ? '' : 's'} in the queue`
           : 'Add images to start'
@@ -679,6 +723,11 @@ function removeItems(ids) {
   if (!doomed.size) return;
   const primaryIdx = state.items.findIndex((it) => it.id === state.selectedId);
 
+  const files = [...doomed].map((id) => state.byId.get(id).file).filter(Boolean);
+  if (state.dataset && files.length) {
+    api.datasetRemoveFiles({ name: state.dataset.name, files }).catch((err) => toast(`Could not remove files: ${err.message}`, { type: 'error' }));
+  }
+
   for (const id of doomed) {
     const item = state.byId.get(id);
     if (item.status === 'processing' && item.genId) api.abortCaption(item.genId);
@@ -706,7 +755,16 @@ function removeItems(ids) {
 
 function clearQueue() {
   if (!state.items.length) return;
-  if (!confirm(`Remove all ${state.items.length} items from the queue? Unsaved captions will be lost.`)) return;
+  const where = state.dataset ? `from "${state.dataset.name}"` : 'from the queue';
+  if (!confirm(`Remove all ${state.items.length} images ${where}? Their copies move to the Recycle Bin.`)) return;
+  const files = state.items.map((it) => it.file).filter(Boolean);
+  if (state.dataset && files.length) api.datasetRemoveFiles({ name: state.dataset.name, files });
+  resetQueueView();
+  scheduleDatasetSave();
+}
+
+/** Empty the queue on screen (used when clearing, switching or deleting datasets). */
+function resetQueueView() {
   pauseBatch();
   api.abortCaption('*');
   for (const item of state.items) {
@@ -741,7 +799,8 @@ async function openInViewer(item) {
 // ---------------------------------------------------------------------------
 
 async function ingestPaths(paths) {
-  const existing = new Set(state.items.map((i) => i.sourcePath).filter(Boolean));
+  if (!requireDataset()) return;
+  const existing = new Set(state.items.map((i) => i.origin).filter(Boolean));
   const fresh = paths.filter((p) => !existing.has(p));
   const skipped = paths.length - fresh.length;
   if (!fresh.length) {
@@ -749,7 +808,9 @@ async function ingestPaths(paths) {
     return;
   }
 
-  const t = fresh.length > 8 ? toast(`Loading 0 / ${fresh.length} images…`, { timeout: 0 }) : null;
+  const t = fresh.length > 8 ? toast(`Copying ${fresh.length} images into "${state.dataset.name}"…`, { timeout: 0 }) : null;
+  // Copy the originals into the dataset folder first; the queue then works on the copies.
+  const copies = await api.datasetImport({ name: state.dataset.name, paths: fresh });
   let loaded = 0;
   let failed = 0;
   const firstIndex = state.items.length;
@@ -757,13 +818,14 @@ async function ingestPaths(paths) {
 
   // Load concurrently but insert in the original (sorted) order.
   const results = await Promise.all(
-    fresh.map((p) =>
+    copies.map((copy) =>
       limit(async () => {
+        if (!copy) return null;
         try {
-          const bytes = await api.readImageFile(p);
-          const ext = splitExt(basename(p)).ext;
+          const bytes = await api.readImageFile(copy.path);
+          const ext = splitExt(basename(copy.path)).ext;
           const blob = new Blob([bytes], { type: MIME_BY_EXT[ext] || 'application/octet-stream' });
-          return { p, blob, ext };
+          return { copy, blob, ext };
         } catch {
           return null;
         } finally {
@@ -780,7 +842,13 @@ async function ingestPaths(paths) {
       continue;
     }
     try {
-      await addItemFromBlob(r.blob, { sourcePath: r.p, fileName: basename(r.p), sourceFormat: r.ext });
+      await addItemFromBlob(r.blob, {
+        sourcePath: r.copy.path,
+        fileName: basename(r.copy.source),
+        sourceFormat: r.ext,
+        file: r.copy.file,
+        origin: r.copy.source,
+      });
     } catch {
       failed++;
     }
@@ -798,7 +866,10 @@ async function ingestPaths(paths) {
 
 async function selectFiles() {
   const paths = await api.selectFiles();
-  if (paths.length) await ingestPaths(paths);
+  if (!paths.length) return;
+  // With a dataset open, picked files go straight into it; otherwise ask where they belong.
+  if (state.dataset) await ingestPaths(paths);
+  else openDropTarget({ paths, loose: [] });
 }
 
 async function selectDirectory() {
@@ -808,7 +879,21 @@ async function selectDirectory() {
     toast(`No supported images found in ${dir}`, { type: 'warn' });
     return;
   }
-  await ingestPaths(files);
+  if (state.dataset) await ingestPaths(files);
+  else openDropTarget({ paths: files, loose: [] });
+}
+
+/** Add images collected from a drop or file picker to the open dataset. */
+async function addIncomingImages({ paths, loose }) {
+  if (paths.length) await ingestPaths(paths);
+  for (const f of loose) {
+    try {
+      const item = await addBlobToDataset(f, f.name || `dropped_${timestamp()}.png`);
+      if (!state.selectedId) selectItem(item.id);
+    } catch (err) {
+      toast(err.message, { type: 'error' });
+    }
+  }
 }
 
 function setupDragAndDrop() {
@@ -845,19 +930,13 @@ function setupDragAndDrop() {
       if (p) paths.push(p);
       else if (f.type.startsWith('image/')) loose.push(f);
     }
-    if (paths.length) {
-      const resolved = await api.resolvePaths(paths);
-      if (resolved.length) await ingestPaths(resolved);
-      else if (!loose.length) toast('No supported images found in the dropped items.', { type: 'warn' });
+    const resolved = paths.length ? await api.resolvePaths(paths) : [];
+    if (!resolved.length && !loose.length) {
+      toast('No supported images found in the dropped items.', { type: 'warn' });
+      return;
     }
-    for (const f of loose) {
-      try {
-        const item = await addItemFromBlob(f, { fileName: f.name || `dropped_${timestamp()}.png` });
-        if (!state.selectedId) selectItem(item.id);
-      } catch (err) {
-        toast(err.message, { type: 'error' });
-      }
-    }
+    // Always ask which dataset the dropped images belong to.
+    openDropTarget({ paths: resolved, loose });
   });
 
   function resetDrag() {
@@ -924,6 +1003,7 @@ function setWebcamButton(on) {
 }
 
 async function captureSnapshot() {
+  if (!requireDataset()) return;
   const v = el.webcamVideo;
   if (!state.webcam.stream || !v.videoWidth) {
     toast('Webcam is not ready yet.', { type: 'warn' });
@@ -939,7 +1019,7 @@ async function captureSnapshot() {
   void el.webcamFlash.offsetWidth;
   el.webcamFlash.classList.add('flash');
 
-  const item = await addItemFromBlob(blob, { fileName: `webcam_${timestamp()}.png`, sourceFormat: 'png' });
+  const item = await addBlobToDataset(blob, `webcam_${timestamp()}.png`, 'png');
   selectItem(item.id);
 }
 
@@ -1957,7 +2037,7 @@ async function exportDataset({ mode }) {
     return;
   }
   const format = state.settings.exportFormat;
-  const session = await api.exportBegin({ mode, format });
+  const session = await api.exportBegin({ mode, format, defaultDir: state.dataset?.dir, baseName: state.dataset?.name });
   if (session.canceled) return;
 
   const total = state.items.length;
@@ -1996,6 +2076,478 @@ async function exportDataset({ mode }) {
   } finally {
     el.exportFolderBtn.disabled = false;
     el.exportZipBtn.disabled = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Datasets: named folders that hold the images and the saved project state
+// ---------------------------------------------------------------------------
+
+const DATASET_SAVE_DELAY_MS = 700;
+const datasetUI = { mode: 'create', list: [], root: '', saveTimer: null, busy: false };
+
+/** Strip Electron's "Error invoking remote method ..." prefix from IPC errors. */
+function ipcMessage(err) {
+  return String(err?.message || err).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '');
+}
+
+function timeAgo(iso) {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms)) return '';
+  const min = Math.round(ms / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  return d < 30 ? `${d} day${d === 1 ? '' : 's'} ago` : new Date(iso).toLocaleDateString();
+}
+
+/**
+ * What gets written to dataset.json: everything needed to restore the queue, plus any
+ * entries whose image couldn't be read this session (kept as-is so nothing is lost).
+ */
+function serializeDataset() {
+  const loaded = state.items
+    .filter((it) => it.file)
+    .map((it) => ({
+      file: it.file,
+      originalName: it.originalName,
+      origin: it.origin || null,
+      name: it.name,
+      sourceFormat: it.sourceFormat,
+      naturalW: it.naturalW,
+      naturalH: it.naturalH,
+      crop: it.crop,
+      outW: it.outW,
+      outH: it.outH,
+      caption: it.caption,
+      status: it.status === 'processing' ? 'queued' : it.status,
+    }));
+  return [...loaded, ...(state.dataset?.unreadable || [])];
+}
+
+function setSaveState(kind, text) {
+  el.datasetSaveState.className = `dataset-save ${kind}`;
+  el.datasetSaveState.textContent = text;
+}
+
+function scheduleDatasetSave() {
+  if (!state.dataset || datasetUI.busy) return;
+  clearTimeout(datasetUI.saveTimer);
+  setSaveState('saving', 'Saving…');
+  datasetUI.saveTimer = setTimeout(saveDatasetNow, DATASET_SAVE_DELAY_MS);
+}
+
+async function saveDatasetNow() {
+  clearTimeout(datasetUI.saveTimer);
+  datasetUI.saveTimer = null;
+  if (!state.dataset) return;
+  const { name } = state.dataset;
+  try {
+    const res = await api.datasetSave({ name, items: serializeDataset() });
+    if (!res.ok) throw new Error(res.error);
+    if (state.dataset?.name !== name) return;
+    const n = state.items.length;
+    setSaveState('saved', `All changes saved · ${n} image${n === 1 ? '' : 's'}`);
+    const row = datasetUI.list.find((d) => d.name === name);
+    if (row) Object.assign(row, { count: n, updatedAt: res.updatedAt });
+    renderDatasetList();
+  } catch (err) {
+    setSaveState('error', `Not saved: ${ipcMessage(err)}`);
+  }
+}
+
+// Flush a pending save synchronously when the window closes, so no edit is lost.
+window.addEventListener('beforeunload', () => {
+  if (!state.dataset || !datasetUI.saveTimer) return;
+  clearTimeout(datasetUI.saveTimer);
+  api.datasetSaveSync({ name: state.dataset.name, items: serializeDataset() });
+});
+
+/** Adding images needs an open dataset; otherwise point the user at step 1. */
+function requireDataset() {
+  if (state.dataset) return true;
+  toast('Create or open a dataset first (step 1).', { type: 'warn' });
+  focusDatasetPanel();
+  return false;
+}
+
+function focusDatasetPanel() {
+  const panel = document.querySelector('.sidebar .panel[data-panel="dataset"]');
+  if (panel.classList.contains('collapsed')) panel.querySelector('.panel-header').click();
+  panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  panel.classList.remove('attention');
+  void panel.offsetWidth;
+  panel.classList.add('attention');
+  el.datasetNameInput.focus();
+}
+
+/** Save in-memory image bytes (webcam, browser drags) into the dataset, then queue them. */
+async function addBlobToDataset(blob, fileName, sourceFormat) {
+  const data = new Uint8Array(await blob.arrayBuffer());
+  const saved = await api.datasetWriteImage({ name: state.dataset.name, fileName, data });
+  return addItemFromBlob(blob, { sourcePath: saved.path, fileName, sourceFormat, file: saved.file });
+}
+
+async function refreshDatasetList() {
+  try {
+    const info = await api.datasetsInfo();
+    datasetUI.list = info.datasets;
+    datasetUI.root = info.root;
+  } catch (err) {
+    toast(`Could not read datasets: ${ipcMessage(err)}`, { type: 'error' });
+  }
+  renderDatasetPanel();
+}
+
+function renderDatasetList() {
+  const current = state.dataset?.name;
+  el.datasetList.innerHTML = datasetUI.list
+    .map((d) => {
+      const active = d.name === current;
+      const count = active ? state.items.length : d.count;
+      const meta = `${count} image${count === 1 ? '' : 's'}${d.updatedAt ? ` · ${timeAgo(d.updatedAt)}` : ''}${d.managed ? '' : ' · not opened yet'}`;
+      return `<button class="dataset-row${active ? ' active' : ''}" role="option" aria-selected="${active}" data-name="${escapeHtml(d.name)}" title="${active ? 'Currently open' : `Open ${escapeHtml(d.name)}`}">
+        ${iconSvg('database', 15)}
+        <span class="dataset-row-main">
+          <span class="dataset-row-name">${escapeHtml(d.name)}</span>
+          <span class="dataset-row-meta">${meta}</span>
+        </span>
+        ${active ? '<span class="dataset-row-open">OPEN</span>' : ''}
+      </button>`;
+    })
+    .join('');
+}
+
+function renderDatasetPanel() {
+  renderDatasetList();
+  const open = !!state.dataset;
+  el.datasetOpenFolderBtn.disabled = !open;
+  el.datasetRenameBtn.disabled = !open;
+  el.datasetDeleteBtn.disabled = !open;
+  el.settingsRootPath.textContent = datasetUI.root;
+  if (!open) setSaveState('', 'No dataset open.');
+}
+
+function setDatasetFormMode(mode) {
+  datasetUI.mode = mode;
+  const renaming = mode === 'rename';
+  el.datasetNameInput.closest('.dataset-form').classList.toggle('renaming', renaming);
+  el.datasetNameInput.value = renaming ? state.dataset.name : '';
+  el.datasetNameInput.placeholder = renaming ? 'New name for this dataset' : 'New dataset name, e.g. Anime';
+  el.datasetSubmitBtn.innerHTML = `${iconSvg(renaming ? 'pencil' : 'plus')}<span>${renaming ? 'Rename' : 'Create'}</span>`;
+  el.datasetCancelBtn.classList.toggle('hidden', !renaming);
+  if (renaming) {
+    el.datasetNameInput.focus();
+    el.datasetNameInput.select();
+  }
+}
+
+async function openDataset(name) {
+  if (state.dataset?.name === name) return;
+  if (datasetUI.saveTimer) await saveDatasetNow();
+  datasetUI.busy = true; // no autosaves while the queue is swapped out
+  resetQueueView();
+  const t = toast(`Opening ${name}…`, { timeout: 0 });
+  try {
+    const res = await api.datasetLoad(name);
+    state.dataset = { name: res.name, dir: res.dir, unreadable: [] };
+    state.settings.lastDataset = res.name;
+    saveSettings();
+    renderDatasetPanel();
+
+    const limit = createLimiter(4);
+    const blobs = await Promise.all(
+      res.items.map((it) =>
+        limit(async () => {
+          try {
+            const bytes = await api.readImageFile(it.path);
+            return new Blob([bytes], { type: MIME_BY_EXT[splitExt(it.path).ext] || 'application/octet-stream' });
+          } catch {
+            return null;
+          }
+        }),
+      ),
+    );
+    // Files that exist but can't be read or decoded stay in dataset.json untouched.
+    const keepUnreadable = (it) => {
+      const { path: _abs, ...entry } = it;
+      state.dataset.unreadable.push(entry);
+    };
+    for (let i = 0; i < res.items.length; i++) {
+      const it = res.items[i];
+      if (!blobs[i]) {
+        keepUnreadable(it);
+        continue;
+      }
+      try {
+        await addItemFromBlob(blobs[i], {
+          sourcePath: it.path,
+          fileName: it.originalName || basename(it.path),
+          sourceFormat: it.sourceFormat,
+          file: it.file,
+          origin: it.origin,
+          restore: it,
+        });
+      } catch {
+        keepUnreadable(it);
+      }
+    }
+    if (state.items[0]) selectItem(state.items[0].id, { scroll: false });
+    const n = state.items.length;
+    const unreadable = state.dataset.unreadable.length;
+    const parts = [`Opened ${res.name} · ${n} image${n === 1 ? '' : 's'}`];
+    if (res.imported) parts.push('imported from the folder');
+    if (unreadable) parts.push(`${unreadable} image${unreadable === 1 ? '' : 's'} couldn't be read (kept in the folder, not removed)`);
+    if (res.missing) parts.push(`${res.missing} missing file${res.missing === 1 ? '' : 's'} removed from the list`);
+    t.update(parts.join(' · '), { type: unreadable || res.missing ? 'warn' : 'success', timeout: unreadable ? 7000 : 3500 });
+    datasetUI.busy = false;
+    if (res.missing) scheduleDatasetSave(); // only entries whose files are really gone are dropped
+    else setSaveState('saved', `All changes saved · ${n} image${n === 1 ? '' : 's'}`);
+  } catch (err) {
+    state.dataset = null;
+    t.update(`Could not open dataset: ${ipcMessage(err)}`, { type: 'error', timeout: 6000 });
+  } finally {
+    datasetUI.busy = false;
+    renderDatasetPanel();
+    updateStats();
+  }
+}
+
+async function createDataset(name, { quiet = false } = {}) {
+  const res = await api.datasetCreate(name);
+  el.datasetNameInput.value = '';
+  await refreshDatasetList();
+  await openDataset(res.name);
+  if (!quiet) toast(`Dataset ${res.name} created. Now add images in step 2.`, { type: 'success', timeout: 3500 });
+}
+
+async function renameDataset(to) {
+  const from = state.dataset.name;
+  if (state.batch.running) pauseBatch();
+  await saveDatasetNow();
+  datasetUI.busy = true;
+  try {
+    const res = await api.datasetRename({ from, to });
+    state.dataset = { ...state.dataset, name: res.name, dir: res.dir };
+    state.settings.lastDataset = res.name;
+    saveSettings();
+    const sep = res.dir.includes('\\') ? '\\' : '/';
+    for (const it of state.items) if (it.file) it.sourcePath = `${res.dir}${sep}${it.file.split('/').join(sep)}`;
+    setDatasetFormMode('create');
+    toast(`Renamed ${from} to ${res.name}`, { type: 'success', timeout: 2500 });
+  } finally {
+    datasetUI.busy = false;
+  }
+  await refreshDatasetList();
+  scheduleStepUpdate();
+}
+
+async function deleteDataset() {
+  if (!state.dataset) return;
+  const { name } = state.dataset;
+  const n = state.items.length;
+  const msg = `Delete dataset "${name}" and its ${n} image${n === 1 ? '' : 's'}?\n\nThe folder moves to the Recycle Bin, so it can still be restored.`;
+  if (!confirm(msg)) return;
+  clearTimeout(datasetUI.saveTimer);
+  datasetUI.saveTimer = null;
+  datasetUI.busy = true;
+  resetQueueView();
+  try {
+    await api.datasetDelete(name);
+    toast(`Moved ${name} to the Recycle Bin`, { type: 'success' });
+  } catch (err) {
+    toast(`Could not delete: ${ipcMessage(err)}`, { type: 'error' });
+  }
+  state.dataset = null;
+  state.settings.lastDataset = null;
+  saveSettings();
+  datasetUI.busy = false;
+  setDatasetFormMode('create');
+  await refreshDatasetList();
+  updateStats();
+}
+
+/** Change where datasets are stored (Settings). `pick` asks main for the new root. */
+async function applyDatasetRoot(pick) {
+  if (datasetUI.saveTimer) await saveDatasetNow();
+  let res;
+  try {
+    res = await pick();
+  } catch (err) {
+    toast(`Could not change the folder: ${ipcMessage(err)}`, { type: 'error' });
+    return;
+  }
+  if (res.canceled) return;
+  if (res.root !== datasetUI.root) {
+    // The open dataset lives in the old location, so close it.
+    datasetUI.busy = true;
+    resetQueueView();
+    state.dataset = null;
+    state.settings.lastDataset = null;
+    saveSettings();
+    datasetUI.busy = false;
+    toast(`Datasets are now stored in ${res.root}`, { type: 'success', timeout: 4000 });
+  }
+  await refreshDatasetList();
+  updateStats();
+}
+
+// ------------------------------ Settings window ------------------------------
+
+function openSettings() {
+  el.settingsRootPath.textContent = datasetUI.root;
+  el.settingsModal.classList.remove('hidden');
+  el.settingsDoneBtn.focus();
+}
+
+function closeSettings() {
+  el.settingsModal.classList.add('hidden');
+}
+
+// ------------------------------ Drop target chooser ------------------------------
+
+let pendingIncoming = null;
+
+/** Ask which dataset newly dropped or picked images belong to. */
+function openDropTarget(pending) {
+  pendingIncoming = pending;
+  const n = pending.paths.length + pending.loose.length;
+  el.dropTargetTitle.textContent = `ADD ${n} IMAGE${n === 1 ? '' : 'S'} TO…`;
+  el.dropTargetSummary.textContent = datasetUI.list.length
+    ? `Choose which dataset ${n === 1 ? 'this image belongs' : `these ${n} images belong`} to, or create a new one.`
+    : `Name a new dataset for ${n === 1 ? 'this image' : `these ${n} images`}.`;
+
+  const current = state.dataset?.name;
+  el.dropTargetList.innerHTML = datasetUI.list
+    .map((d) => {
+      const count = d.name === current ? state.items.length : d.count;
+      return `<label class="target-option">
+        <input type="radio" name="dropTarget" value="${escapeHtml(d.name)}" />
+        ${iconSvg('database', 15)}
+        <span class="target-main">
+          <span class="target-name">${escapeHtml(d.name)}</span>
+          <span class="target-meta">${count} image${count === 1 ? '' : 's'}${d.updatedAt ? ` · ${timeAgo(d.updatedAt)}` : ''}</span>
+        </span>
+        ${d.name === current ? '<span class="target-tag">OPEN</span>' : ''}
+      </label>`;
+    })
+    .join('');
+
+  el.dropNewName.value = '';
+  selectDropTarget(current || '');
+  el.dropTargetModal.classList.remove('hidden');
+  if (current) el.dropTargetAddBtn.focus();
+  else el.dropNewName.focus();
+}
+
+/** '' selects "New dataset"; otherwise the dataset with that name. */
+function selectDropTarget(value) {
+  for (const radio of el.dropTargetModal.querySelectorAll('input[name="dropTarget"]')) {
+    radio.checked = radio.value === value;
+    radio.closest('.target-option').classList.toggle('selected', radio.checked);
+  }
+}
+
+function closeDropTarget() {
+  el.dropTargetModal.classList.add('hidden');
+  pendingIncoming = null;
+}
+
+async function confirmDropTarget() {
+  const pending = pendingIncoming;
+  if (!pending) return;
+  const target = el.dropTargetModal.querySelector('input[name="dropTarget"]:checked')?.value ?? '';
+  el.dropTargetAddBtn.disabled = true;
+  try {
+    if (!target) {
+      const name = el.dropNewName.value.trim();
+      if (!name) {
+        el.dropNewName.classList.remove('shake');
+        void el.dropNewName.offsetWidth;
+        el.dropNewName.classList.add('shake');
+        el.dropNewName.focus();
+        return;
+      }
+      await createDataset(name, { quiet: true }); // throws (and keeps the dialog open) on a bad or duplicate name
+    } else if (target !== state.dataset?.name) {
+      await openDataset(target);
+      if (state.dataset?.name !== target) return; // could not open it
+    }
+    closeDropTarget();
+    await addIncomingImages(pending);
+  } catch (err) {
+    toast(ipcMessage(err), { type: 'error', timeout: 5000 });
+  } finally {
+    el.dropTargetAddBtn.disabled = false;
+  }
+}
+
+async function submitDatasetForm() {
+  const value = el.datasetNameInput.value.trim();
+  if (!value) {
+    el.datasetNameInput.focus();
+    return;
+  }
+  el.datasetSubmitBtn.disabled = true;
+  try {
+    if (datasetUI.mode === 'rename') await renameDataset(value);
+    else await createDataset(value);
+  } catch (err) {
+    toast(ipcMessage(err), { type: 'error', timeout: 5000 });
+  } finally {
+    el.datasetSubmitBtn.disabled = false;
+  }
+}
+
+async function setupDatasets() {
+  el.datasetSubmitBtn.addEventListener('click', submitDatasetForm);
+  el.datasetCancelBtn.addEventListener('click', () => setDatasetFormMode('create'));
+  el.datasetNameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitDatasetForm();
+    else if (e.key === 'Escape' && datasetUI.mode === 'rename') setDatasetFormMode('create');
+  });
+  el.datasetList.addEventListener('click', (e) => {
+    const row = e.target.closest('.dataset-row');
+    if (row) openDataset(row.dataset.name);
+  });
+  el.datasetOpenFolderBtn.addEventListener('click', () => state.dataset && api.datasetOpenFolder(state.dataset.name));
+  el.datasetRenameBtn.addEventListener('click', () => state.dataset && setDatasetFormMode('rename'));
+  el.datasetDeleteBtn.addEventListener('click', deleteDataset);
+
+  // Settings window
+  el.openSettingsBtn.addEventListener('click', openSettings);
+  el.settingsCloseBtn.addEventListener('click', closeSettings);
+  el.settingsDoneBtn.addEventListener('click', closeSettings);
+  el.settingsModal.addEventListener('mousedown', (e) => e.target === el.settingsModal && closeSettings());
+  el.settingsChangeRootBtn.addEventListener('click', () => applyDatasetRoot(api.datasetsChooseRoot));
+  el.settingsResetRootBtn.addEventListener('click', () => applyDatasetRoot(api.datasetsResetRoot));
+  el.settingsOpenRootBtn.addEventListener('click', () => api.datasetOpenFolder(null));
+
+  // Drop target chooser
+  el.dropTargetOptions.addEventListener('change', (e) => {
+    if (e.target.name === 'dropTarget') selectDropTarget(e.target.value);
+  });
+  el.dropNewName.addEventListener('focus', () => selectDropTarget(''));
+  el.dropNewName.addEventListener('input', () => selectDropTarget(''));
+  el.dropNewName.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') confirmDropTarget();
+  });
+  el.dropTargetAddBtn.addEventListener('click', confirmDropTarget);
+  el.dropTargetCancelBtn.addEventListener('click', closeDropTarget);
+  el.dropTargetCloseBtn.addEventListener('click', closeDropTarget);
+  el.dropTargetModal.addEventListener('mousedown', (e) => e.target === el.dropTargetModal && closeDropTarget());
+
+  await refreshDatasetList();
+  const last = state.settings.lastDataset;
+  if (last && datasetUI.list.some((d) => d.name === last)) {
+    await openDataset(last);
+  } else {
+    // Nothing open yet: make sure step 1 is visible.
+    const panel = document.querySelector('.sidebar .panel[data-panel="dataset"]');
+    if (panel.classList.contains('collapsed')) panel.querySelector('.panel-header').click();
+    scheduleStepUpdate();
   }
 }
 
@@ -2083,6 +2635,14 @@ function setupKeyboard() {
     const typing = target.closest('input, textarea, select');
     const modalOpen = !el.cropModal.classList.contains('hidden');
 
+    if (!el.dropTargetModal.classList.contains('hidden')) {
+      if (e.key === 'Escape') closeDropTarget();
+      return;
+    }
+    if (!el.settingsModal.classList.contains('hidden')) {
+      if (e.key === 'Escape') closeSettings();
+      return;
+    }
     if (setup?.isOpen()) {
       if (e.key === 'Escape') setup.close();
       return;
@@ -2200,6 +2760,7 @@ async function init() {
   el.openSetupBtn.addEventListener('click', () => setup.open());
   el.bannerSetupBtn.addEventListener('click', () => setup.open());
 
+  await setupDatasets();
   await checkOllama();
   await setup.checkOnLaunch();
   setInterval(() => {

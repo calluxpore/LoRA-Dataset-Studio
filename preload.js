@@ -48,6 +48,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onCaptionToken: (cb) => subscribe('caption-token', cb),
   onCaptionThinking: (cb) => subscribe('caption-thinking', cb),
 
+  // Datasets
+  datasetsInfo: () => ipcRenderer.invoke('datasets-info'),
+  datasetsChooseRoot: () => ipcRenderer.invoke('datasets-choose-root'),
+  datasetsResetRoot: () => ipcRenderer.invoke('datasets-reset-root'),
+  datasetCreate: (name) => ipcRenderer.invoke('dataset-create', name),
+  datasetLoad: (name) => ipcRenderer.invoke('dataset-load', name),
+  datasetSave: (payload) => ipcRenderer.invoke('dataset-save', payload),
+  datasetSaveSync: (payload) => ipcRenderer.sendSync('dataset-save-sync', payload),
+  datasetImport: (payload) => ipcRenderer.invoke('dataset-import', payload),
+  datasetWriteImage: (payload) => ipcRenderer.invoke('dataset-write-image', payload),
+  datasetRemoveFiles: (payload) => ipcRenderer.invoke('dataset-remove-files', payload),
+  datasetRename: (payload) => ipcRenderer.invoke('dataset-rename', payload),
+  datasetDelete: (name) => ipcRenderer.invoke('dataset-delete', name),
+  datasetOpenFolder: (name) => ipcRenderer.invoke('dataset-open-folder', name),
+
   // Setup assistant
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   copyText: (text) => ipcRenderer.invoke('copy-text', text),

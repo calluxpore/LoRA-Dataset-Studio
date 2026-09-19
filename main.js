@@ -16,6 +16,7 @@ const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs/promises');
 const JSZip = require('jszip');
+const { registerDatasets } = require('./datasets');
 
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.bmp']);
 const DEFAULT_OLLAMA_HOST = 'http://localhost:11434';
@@ -140,6 +141,17 @@ function setupPermissions() {
     callback(allowed.has(permission));
   });
   ses.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
+}
+
+// One instance only: two windows editing the same dataset.json would overwrite each other.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  });
 }
 
 app.whenReady().then(async () => {
@@ -464,14 +476,14 @@ function uniqueName(base, used) {
   return name;
 }
 
-ipcMain.handle('export-begin', async (_e, { mode, format }) => {
+ipcMain.handle('export-begin', async (_e, { mode, format, defaultDir, baseName }) => {
   const ext = format === 'jpg' ? 'jpg' : 'png';
   let target;
 
   if (mode === 'zip') {
     const res = await dialog.showSaveDialog(mainWindow, {
       title: 'Save dataset as ZIP',
-      defaultPath: `dataset_${new Date().toISOString().slice(0, 10)}.zip`,
+      defaultPath: path.join(defaultDir || app.getPath('documents'), `${baseName || 'dataset'}_${new Date().toISOString().slice(0, 10)}.zip`),
       filters: [{ name: 'ZIP archive', extensions: ['zip'] }],
     });
     if (res.canceled || !res.filePath) return { canceled: true };
@@ -479,6 +491,7 @@ ipcMain.handle('export-begin', async (_e, { mode, format }) => {
   } else {
     const res = await dialog.showOpenDialog(mainWindow, {
       title: 'Choose export folder',
+      defaultPath: defaultDir || undefined,
       properties: ['openDirectory', 'createDirectory', 'promptToCreate'],
     });
     if (res.canceled || !res.filePaths.length) return { canceled: true };
@@ -568,3 +581,6 @@ ipcMain.handle('open-external', async (_e, url) => {
   await shell.openExternal(url);
   return { ok: true };
 });
+
+// Datasets: named folders in the library root that store images and project state.
+registerDatasets({ readPrefs, writePrefs, getWindow: () => mainWindow });
