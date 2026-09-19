@@ -26,12 +26,13 @@
 - **Fast ingestion:** add single files, whole folders (scanned recursively), webcam snapshots, or drag and drop files and folders from Explorer or Finder. Supports JPG, PNG, WEBP and BMP.
 - **Interactive cropping:** a Cropper.js editor in the sidebar plus a large crop window, with ratio presets (1:1, 4:3, 16:9, 3:4, 9:16, Freeform), fixed or automatic width and height, and optional snapping to multiples of 8.
 - **Bulk operations:** select images with a drag box, **Ctrl+A** or **Ctrl/Shift+click**, then center-crop them all to your target size, copy one crop box onto every selected image, caption them, or remove them.
-- **Local AI captions:** captions stream in word by word from a local [Ollama](https://ollama.com) vision model (default [`minicpm-v4.6`](https://ollama.com/library/minicpm-v4.6)). You can edit them at any time, and there's a trigger-word prefix, a custom prompt and a temperature setting. **Your images never leave your computer.**
+- **Local AI captions:** captions stream in word by word from a local [Ollama](https://ollama.com) vision model (default [`minicpm-v4.6`](https://ollama.com/library/minicpm-v4.6)). You can edit them at any time, and there's a trigger-word prefix, a custom prompt, a temperature setting, and one-click **Character / Style / Object / General** prompt presets. **Your images never leave your computer.**
 - **Batch sequencer:** start, pause or resume captioning. It skips images that already have a caption and has per-image regenerate and stop buttons.
 - **Batch rename:** `prefix_001`, `prefix_002`, … with a live preview.
 - **Export:** paired `name.png|jpg` and `name.txt` files written straight to a folder or packed into a single ZIP. You get an OS notification and an *Open Folder* shortcut when it finishes.
 - **Setup Assistant:** shows whether Ollama is running and the model is downloaded, with three short steps (install Ollama, pull the model, run it) and copyable commands.
-- **Light, dark and system themes**, a borderless window, collapsible sidebar panels, and a grid or list view.
+- **Guided workflow:** the sidebar panels are numbered steps (Ingest → Resize / Crop → Rename → Caption). Steps still to do are highlighted and finished ones fade with a ✓. A status bar at the bottom summarizes the dataset: images, cropped, renamed, captioned, failed, ready to export and selected.
+- **Light, dark and system themes** in pastel colors, a borderless window, collapsible sidebar panels, and a grid or list view.
 
 <table>
   <tr>
@@ -91,7 +92,16 @@ The app talks to Ollama from the Electron main process, so you **don't** need to
    - To crop one image: select it, adjust the box, then click **Apply Crop to Current**. Click a thumbnail to open the large editor.
    - To reuse one framing: position the box on one image, select several, then click **Apply Crop Box to N Selected**.
 3. **Rename:** enter a prefix, start index and zero padding, then click **Apply Batch Rename**.
-4. **Caption:** click **Start Batch Captioning**. Edit captions directly in each card, and use ✦ to regenerate one.
+4. **Caption:** in *Caption Settings*, pick the preset that matches your LoRA. Each one sets the prompt, temperature and send size:
+
+   | Preset | Use for | What the caption leaves out | Temp | Send size |
+   | --- | --- | --- | --- | --- |
+   | **Character** | A person or character | Face, hair, eyes, body | 0.2 | 1024 |
+   | **Style** | An art style | Style, medium, colors | 0.3 | 896 |
+   | **Object** | A product or object | The object's own look | 0.15 | 1024 |
+   | **General** | Fine-tunes, Flux/SD3 | Nothing, describes everything | 0.25 | 1024 |
+
+   Whatever the caption leaves out is what your trigger word learns. Put the trigger word in *Trigger word / caption prefix*. Then click **Start Batch Captioning**. Edit captions directly in each card, and use ✦ to regenerate one.
 5. **Export:** choose PNG or JPG, then **Export All to Folder** or **ZIP**.
 
 **How export sizes work:**

@@ -35,8 +35,8 @@ let exportSessionCounter = 0;
 // ---------------------------------------------------------------------------
 
 const THEME_SOURCES = new Set(['system', 'light', 'dark']);
-const BG_DARK = '#0f1115';
-const BG_LIGHT = '#f4f5f8';
+const BG_DARK = '#0f1015';
+const BG_LIGHT = '#f6f5fb';
 
 function prefsPath() {
   return path.join(app.getPath('userData'), 'preferences.json');

@@ -165,7 +165,7 @@ function cacheDom() {
     'webcamDevice', 'captureBtn', 'dropzone', 'outWidth', 'outHeight', 'autoWidth', 'autoHeight',
     'ratioW', 'ratioH', 'snap8', 'ratioPresets', 'cropWorkspace', 'cropEmpty', 'sidebarCropStage',
     'sidebarCropImg', 'expandCropBtn', 'cropInfo', 'applyCropBtn', 'batchCropBtn', 'resetCropBtn',
-    'renamePrefix', 'renameStart', 'renamePad', 'renamePreview', 'applyRenameBtn', 'captionPrompt',
+    'renamePrefix', 'renameStart', 'renamePad', 'renamePreview', 'applyRenameBtn', 'captionPrompt', 'captionPresets', 'presetHint',
     'captionPrefix', 'captionTemp', 'captionMaxDim', 'captionSingleLine', 'captionSkipDone', 'ollamaHost',
     'statTotal', 'statDone', 'statProc', 'statErr', 'batchProgressFill', 'queueFilter', 'viewToggle',
     'clearQueueBtn', 'queueScroll', 'queueEmpty', 'queue', 'cropModal', 'cropModalName', 'closeCropModalBtn',
@@ -439,6 +439,7 @@ function createCard(item) {
   refs.caption.addEventListener('input', () => {
     item.caption = refs.caption.value;
     updateCharCount(item);
+    scheduleStepUpdate();
   });
   refs.caption.addEventListener('focus', () => selectItem(item.id, { scroll: false }));
 
@@ -528,6 +529,120 @@ function updateStats() {
   el.batchProgressFill.style.width = total ? `${(done / total) * 100}%` : '0%';
   el.queueEmpty.classList.toggle('hidden', total > 0);
   updateRenamePreview();
+  scheduleStepUpdate();
+}
+
+// ---------------------------------------------------------------------------
+// Workflow steps: sidebar panels highlight while their step is still to do
+// ---------------------------------------------------------------------------
+
+const STEP_ORDER = ['ingest', 'crop', 'rename', 'caption'];
+let stepUpdateQueued = false;
+
+/** Queue progress in one pass, derived from the items so it stays correct as they change. */
+function computeProgress() {
+  // Renamed = follows the current template (prefix + zero-padded number). Gaps left by
+  // deleted images still count; a changed prefix/padding or a newly added image does not.
+  const prefix = state.settings.renamePrefix.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`^${prefix ? `${prefix}_` : ''}\\d{${state.settings.renamePad},}$`);
+  const p = { total: state.items.length, cropped: 0, renamed: 0, captioned: 0, ready: 0, processing: 0, failed: 0 };
+  for (const it of state.items) {
+    const cropped = !!it.crop;
+    const renamed = pattern.test(it.name);
+    const captioned = it.status !== 'processing' && !!it.caption.trim();
+    p.cropped += cropped;
+    p.renamed += renamed;
+    p.captioned += captioned;
+    p.ready += cropped && renamed && captioned;
+    if (it.status === 'processing') p.processing++;
+    else if (it.status === 'error') p.failed++;
+  }
+  p.selected = state.multi.size;
+  return p;
+}
+
+function computeSteps(p = computeProgress()) {
+  const n = p.total;
+  return {
+    ingest: { done: n > 0, count: n, total: n, what: 'images added' },
+    crop: { done: n > 0 && p.cropped === n, count: p.cropped, total: n, what: 'cropped' },
+    rename: { done: n > 0 && p.renamed === n, count: p.renamed, total: n, what: 'renamed' },
+    caption: { done: n > 0 && p.captioned === n, count: p.captioned, total: n, what: 'captioned' },
+  };
+}
+
+/** Bottom status bar: a plain-language summary of the dataset. */
+function updateStatusBar(p) {
+  const bar = document.getElementById('statusStats');
+  if (!bar) return;
+  if (!p.total) {
+    bar.innerHTML = `<span class="sb-item sb-empty">${iconSvg('images', 13)}No images yet. Add some to get started</span>`;
+    return;
+  }
+  const plural = (n, word) => `${word}${n === 1 ? '' : 's'}`;
+  const progress = (icon, count, verb) =>
+    ({ icon, cls: count === p.total ? 'complete' : '', html: `<b>${count}</b> of ${p.total} ${verb}`, title: `${count} of ${p.total} images ${verb}` });
+
+  const items = [
+    { icon: 'images', html: `<b>${p.total}</b> ${plural(p.total, 'image')}`, title: 'Images in the queue' },
+    progress('crop', p.cropped, 'cropped'),
+    progress('tag', p.renamed, 'renamed'),
+    progress('message', p.captioned, 'captioned'),
+  ];
+  if (p.processing) items.push({ icon: 'sparkles', cls: 'busy', html: `<b>${p.processing}</b> captioning…`, title: 'Captions being generated' });
+  if (p.failed) items.push({ icon: 'alert', cls: 'warn', html: `<b>${p.failed}</b> failed`, title: 'Captions that failed. Use ✦ on the card to retry' });
+  items.push({
+    icon: 'folderOut',
+    cls: p.ready === p.total ? 'complete' : '',
+    html: p.ready === p.total ? 'All ready to export' : `<b>${p.ready}</b> ready to export`,
+    title: 'Images that are cropped, renamed and captioned',
+  });
+  if (p.selected > 1) items.push({ icon: 'check', cls: 'accent', html: `<b>${p.selected}</b> selected`, title: 'Selected images' });
+
+  bar.innerHTML = items
+    .map((it) => `<span class="sb-item ${it.cls || ''}" title="${escapeHtml(it.title)}">${iconSvg(it.icon, 13)}<span>${it.html}</span></span>`)
+    .join('<span class="sb-sep"></span>');
+}
+
+function scheduleStepUpdate() {
+  if (stepUpdateQueued) return;
+  stepUpdateQueued = true;
+  requestAnimationFrame(() => {
+    stepUpdateQueued = false;
+    updateStepStates();
+  });
+}
+
+function updateStepStates() {
+  const progress = computeProgress();
+  updateStatusBar(progress);
+  const steps = computeSteps(progress);
+  STEP_ORDER.forEach((key, i) => {
+    const panel = document.querySelector(`.sidebar .panel[data-panel="${key}"]`);
+    if (!panel) return;
+    const s = steps[key];
+    panel.classList.toggle('step-done', s.done);
+    panel.classList.toggle('step-pending', !s.done);
+
+    const badge = panel.querySelector('.step-badge');
+    const label = panel.querySelector('.step-state');
+    const header = panel.querySelector('.panel-header');
+    if (s.done) {
+      badge.innerHTML = iconSvg('check', 12);
+      label.textContent = 'Done';
+    } else {
+      badge.textContent = String(i + 1);
+      label.textContent = key === 'ingest' ? 'Start here' : s.total ? `${s.count}/${s.total}` : '';
+    }
+    header.title =
+      key === 'ingest'
+        ? s.done
+          ? `${s.total} image${s.total === 1 ? '' : 's'} in the queue`
+          : 'Add images to start'
+        : s.total
+          ? `${s.count} of ${s.total} images ${s.what}`
+          : 'Add images first';
+  });
 }
 
 function applyFilterTo(item) {
@@ -1093,6 +1208,7 @@ function updateSelectionUI() {
   const n = next.size;
   el.selectionBar.classList.toggle('hidden', n < 2);
   el.selCount.textContent = n;
+  scheduleStepUpdate(); // status bar shows the selection count
   el.applyCropBtn.querySelector('span').textContent = n > 1 ? `Apply Crop Box to ${n} Selected` : 'Apply Crop to Current';
   el.batchCropBtn.querySelector('span').textContent =
     n > 1 ? `Center-Crop ${n} Selected to Ratio` : 'Batch Center-Crop All to Ratio';
@@ -1378,6 +1494,7 @@ function setupRenameControls() {
     s.renamePad = toInt(el.renamePad.value, 3, 1, 8);
     saveSettings();
     updateRenamePreview();
+    scheduleStepUpdate(); // a changed template means items no longer match it
   };
   el.renamePrefix.addEventListener('input', onChange);
   el.renameStart.addEventListener('input', onChange);
@@ -1388,6 +1505,109 @@ function setupRenameControls() {
 // ---------------------------------------------------------------------------
 // Caption settings
 // ---------------------------------------------------------------------------
+
+/**
+ * Caption presets. Each one describes what varies between images and leaves out
+ * what the LoRA should learn, so that concept gets absorbed into the trigger word.
+ * Lower temperatures keep captions consistent across a dataset; a larger send size
+ * helps the model see small details (clothing, accessories, surroundings).
+ */
+const CAPTION_PRESETS = {
+  character: {
+    label: 'Character',
+    temperature: 0.2,
+    captionMaxDim: 1024,
+    singleLine: true,
+    hint: "Describes clothing, pose, setting and framing, but not the person's face or body, so the trigger word learns who they are.",
+    prompt:
+      'Describe this image as one comma-separated caption for AI training. Include the clothing, pose, expression, action, ' +
+      'camera angle, framing (close-up, half body, full body), background and lighting. Do not describe the person\'s face, ' +
+      'hair, eye color, skin or body type. Do not name the person. Write short phrases separated by commas, without labels ' +
+      'like "Action:" or "Pose:". Output only the caption, under 60 words.',
+  },
+  style: {
+    label: 'Style',
+    temperature: 0.3,
+    captionMaxDim: 896,
+    singleLine: true,
+    hint: 'Describes only the content, not the art style, so the trigger word learns the style.',
+    prompt:
+      'Describe only the content of this image as one comma-separated caption for AI training: the subjects, what they are ' +
+      'doing, objects, setting, composition and camera angle. Do not mention the art style, medium, colors, brushwork, ' +
+      'lighting mood or the words "painting", "illustration" or "artwork". Output only the caption, under 50 words.',
+  },
+  object: {
+    label: 'Object',
+    temperature: 0.15,
+    captionMaxDim: 1024,
+    singleLine: true,
+    hint: 'Describes the scene around the object, not the object itself, so the trigger word learns what it looks like.',
+    prompt:
+      'Describe this image as one comma-separated caption for AI training. Include the setting, surface, background, other ' +
+      'objects, lighting, camera angle and how the main object is placed. Refer to the main object only as "the object" and ' +
+      'do not describe its shape, color, material or branding. Output only the caption, under 50 words.',
+  },
+  general: {
+    label: 'General',
+    temperature: 0.25,
+    captionMaxDim: 1024,
+    singleLine: true,
+    hint: 'Describes everything in detail. Best for general fine-tunes and natural-language models like Flux or SD3.',
+    prompt:
+      'Write one detailed caption for this image for training a text-to-image model. Describe the main subject, clothing, ' +
+      'pose, action, setting, background, lighting, colors, composition, camera angle and art style or medium. Write plain ' +
+      'descriptive phrases separated by commas. Do not start with "This image shows" and do not mention the image itself. ' +
+      'Output only the caption, under 80 words.',
+  },
+};
+
+/** Which preset the current prompt matches (edited prompts count as custom). */
+function activePresetKey() {
+  const prompt = state.settings.prompt.trim();
+  return Object.keys(CAPTION_PRESETS).find((k) => CAPTION_PRESETS[k].prompt === prompt) || null;
+}
+
+function renderPresetState() {
+  const key = activePresetKey();
+  $$('.chip', el.captionPresets).forEach((c) => {
+    const on = c.dataset.preset === key;
+    c.classList.toggle('active', on);
+    c.setAttribute('aria-pressed', String(on));
+  });
+  if (key) {
+    const p = CAPTION_PRESETS[key];
+    el.presetHint.textContent = `${p.hint} Temperature ${p.temperature} · send size ${p.captionMaxDim} px.`;
+  } else {
+    el.presetHint.textContent = 'Custom prompt. Pick a preset above to fill in a recommended prompt and settings.';
+  }
+}
+
+function applyCaptionPreset(key) {
+  const p = CAPTION_PRESETS[key];
+  if (!p) return;
+  const s = state.settings;
+  s.prompt = p.prompt;
+  s.temperature = p.temperature;
+  s.captionMaxDim = p.captionMaxDim;
+  s.singleLine = p.singleLine;
+  el.captionPrompt.value = s.prompt;
+  el.captionTemp.value = s.temperature;
+  el.captionMaxDim.value = s.captionMaxDim;
+  el.captionSingleLine.checked = s.singleLine;
+  saveSettings();
+  renderPresetState();
+
+  // Briefly highlight the fields that changed.
+  for (const field of [el.captionPrompt, el.captionTemp, el.captionMaxDim]) {
+    field.classList.remove('flash-update');
+    void field.offsetWidth;
+    field.classList.add('flash-update');
+  }
+  toast(`${p.label} preset applied: temperature ${p.temperature}, send size ${p.captionMaxDim} px`, {
+    type: 'success',
+    timeout: 2500,
+  });
+}
 
 function setupCaptionSettings() {
   const s = state.settings;
@@ -1402,7 +1622,13 @@ function setupCaptionSettings() {
   el.captionPrompt.addEventListener('input', () => {
     s.prompt = el.captionPrompt.value;
     saveSettings();
+    renderPresetState();
   });
+  el.captionPresets.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip[data-preset]');
+    if (chip) applyCaptionPreset(chip.dataset.preset);
+  });
+  renderPresetState();
   el.captionPrefix.addEventListener('input', () => {
     s.captionPrefix = el.captionPrefix.value;
     saveSettings();

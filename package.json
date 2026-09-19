@@ -1,7 +1,7 @@
 {
   "name": "lora-dataset-studio",
   "productName": "LoRA Dataset Studio",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Desktop dataset studio for diffusion/LoRA training: ingest, crop, rename, caption with local Ollama vision models, and export image/caption pairs.",
   "main": "main.js",
   "author": "LoRA Dataset Studio",

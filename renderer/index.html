@@ -82,8 +82,8 @@
     <!-- ----------------------------- SIDEBAR ----------------------------- -->
     <aside class="sidebar" id="sidebar">
       <!-- Ingestion -->
-      <section class="panel" data-panel="ingest">
-        <button class="panel-header" aria-expanded="true"><i data-icon="download"></i><span>Ingest</span><i data-icon="chevronDown" class="panel-chevron"></i></button>
+      <section class="panel step-pending" data-panel="ingest">
+        <button class="panel-header" aria-expanded="true"><span class="step-badge">1</span><i data-icon="download"></i><span>Ingest</span><span class="step-state"></span><i data-icon="chevronDown" class="panel-chevron"></i></button>
         <div class="panel-body">
           <div class="btn-row">
             <button class="btn btn-block" id="selectFilesBtn"><i data-icon="image"></i><span>Select Files</span></button>
@@ -111,8 +111,8 @@
       </section>
 
       <!-- Resize / Crop -->
-      <section class="panel panel-amber" data-panel="crop">
-        <button class="panel-header amber-header" aria-expanded="true"><span>RESIZE / CROP</span><i data-icon="chevronDown" class="panel-chevron"></i></button>
+      <section class="panel step-pending" data-panel="crop">
+        <button class="panel-header" aria-expanded="true"><span class="step-badge">2</span><i data-icon="crop"></i><span>Resize / Crop</span><span class="step-state"></span><i data-icon="chevronDown" class="panel-chevron"></i></button>
         <div class="panel-body">
           <div class="field-grid">
             <label class="field-label" for="outWidth">Width</label>
@@ -172,8 +172,8 @@
       </section>
 
       <!-- Batch Renaming -->
-      <section class="panel" data-panel="rename">
-        <button class="panel-header" aria-expanded="true"><i data-icon="tag"></i><span>Batch Rename</span><i data-icon="chevronDown" class="panel-chevron"></i></button>
+      <section class="panel step-pending" data-panel="rename">
+        <button class="panel-header" aria-expanded="true"><span class="step-badge">3</span><i data-icon="tag"></i><span>Batch Rename</span><span class="step-state"></span><i data-icon="chevronDown" class="panel-chevron"></i></button>
         <div class="panel-body">
           <div class="field-stack">
             <label class="field-label" for="renamePrefix">Prefix</label>
@@ -195,12 +195,21 @@
       </section>
 
       <!-- Caption settings -->
-      <section class="panel" data-panel="caption">
-        <button class="panel-header" aria-expanded="true"><i data-icon="message"></i><span>Caption Settings</span><i data-icon="chevronDown" class="panel-chevron"></i></button>
+      <section class="panel step-pending" data-panel="caption">
+        <button class="panel-header" aria-expanded="true"><span class="step-badge">4</span><i data-icon="message"></i><span>Caption Settings</span><span class="step-state"></span><i data-icon="chevronDown" class="panel-chevron"></i></button>
         <div class="panel-body">
           <div class="field-stack">
             <label class="field-label" for="captionPrompt">Prompt</label>
             <textarea class="text-input" id="captionPrompt" rows="5" spellcheck="false"></textarea>
+          </div>
+          <div class="field-stack">
+            <div class="chip-row" id="captionPresets" role="group" aria-label="Caption prompt presets">
+              <button class="chip" data-preset="character" title="Character or person LoRA">Character</button>
+              <button class="chip" data-preset="style" title="Art style LoRA">Style</button>
+              <button class="chip" data-preset="object" title="Object or product LoRA">Object</button>
+              <button class="chip" data-preset="general" title="General dataset or fine-tune">General</button>
+            </div>
+            <div class="preset-hint muted" id="presetHint"></div>
           </div>
           <div class="field-stack">
             <label class="field-label" for="captionPrefix">Trigger word / caption prefix</label>
@@ -275,13 +284,18 @@
         </div>
         <div class="queue grid" id="queue"></div>
       </div>
+
+      <!-- Status bar: sits under the image area only, so it centers on the images -->
+      <footer class="statusbar" id="statusBar" role="status" aria-live="polite">
+        <div class="statusbar-stats" id="statusStats"></div>
+      </footer>
     </section>
   </main>
 
   <!-- ============================== SETUP ASSISTANT ============================== -->
   <div class="modal hidden" id="setupModal" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
     <div class="modal-card setup-card">
-      <div class="modal-header amber-header">
+      <div class="modal-header accent-header">
         <span id="setupTitle">SETUP ASSISTANT</span>
         <button class="icon-btn" id="setupCloseBtn" title="Close (Esc)"><i data-icon="x"></i></button>
       </div>
@@ -323,7 +337,7 @@
   <!-- ============================== CROP MODAL ============================== -->
   <div class="modal hidden" id="cropModal" role="dialog" aria-modal="true" aria-labelledby="cropModalTitle">
     <div class="modal-card">
-      <div class="modal-header amber-header">
+      <div class="modal-header accent-header">
         <span id="cropModalTitle">RESIZE / CROP — <span id="cropModalName"></span></span>
         <button class="icon-btn" id="closeCropModalBtn" title="Close (Esc)"><i data-icon="x"></i></button>
       </div>
