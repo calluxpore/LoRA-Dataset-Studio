@@ -1473,7 +1473,7 @@ async function checkOllama({ silent = true } = {}) {
   else {
     showBanner(
       `<strong>Model not downloaded</strong> — <code>${escapeHtml(state.settings.model)}</code> isn't installed in Ollama yet. ` +
-        'Download it with the Setup Assistant (one click) or pick another vision model.',
+        'Open the Setup Assistant for the steps, or pick another vision model.',
     );
   }
   if (!silent) toast(`Ollama online · ${res.models.length} model(s) installed`, { type: 'success', timeout: 2000 });

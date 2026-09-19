@@ -287,43 +287,28 @@
       </div>
       <div class="setup-body">
         <p class="setup-intro">
-          LoRA Dataset Studio writes captions with a <b>local</b> vision model through <b>Ollama</b>.
-          Your images never leave this computer. Captioning needs these two things:
+          Captions are generated locally by <b>Ollama</b> with the <code>minicpm-v4.6</code> vision model.
+          Your images never leave this computer.
         </p>
 
-        <section class="setup-step" id="stepOllama">
-          <div class="step-status pending" id="stepOllamaIcon"></div>
-          <div class="step-main">
-            <div class="step-title">1 · Ollama installed and running</div>
-            <div class="step-detail" id="stepOllamaDetail">Checking…</div>
-            <div class="step-progress hidden" id="installProgress">
-              <div class="progress"><div class="progress-fill" id="installProgressFill"></div></div>
-              <span class="muted" id="installProgressText"></span>
-            </div>
-            <div class="step-actions" id="stepOllamaActions"></div>
-            <details class="step-manual">
-              <summary>Manual instructions</summary>
-              <div class="manual-body" id="ollamaManual"></div>
-            </details>
-          </div>
-        </section>
+        <div class="setup-status">
+          <span class="setup-check" id="checkOllama"><span class="dot"></span><span class="label">Ollama running</span></span>
+          <span class="setup-check" id="checkModel"><span class="dot"></span><span class="label">minicpm-v4.6 downloaded</span></span>
+        </div>
 
-        <section class="setup-step" id="stepModel">
-          <div class="step-status pending" id="stepModelIcon"></div>
-          <div class="step-main">
-            <div class="step-title">2 · Vision model <code id="setupModelName">minicpm-v4.6</code> downloaded</div>
-            <div class="step-detail" id="stepModelDetail">Waiting for Ollama…</div>
-            <div class="step-progress hidden" id="pullProgress">
-              <div class="progress"><div class="progress-fill" id="pullProgressFill"></div></div>
-              <span class="muted" id="pullProgressText"></span>
-            </div>
-            <div class="step-actions" id="stepModelActions"></div>
-            <details class="step-manual">
-              <summary>Manual instructions</summary>
-              <div class="manual-body" id="modelManual"></div>
-            </details>
-          </div>
-        </section>
+        <ol class="setup-steps">
+          <li>
+            <b>Install Ollama</b> from <a href="#" class="ext-link" data-url="https://ollama.com/download">ollama.com/download</a> and run the installer.
+          </li>
+          <li>
+            <b>Open a terminal</b> and download the model:
+            <div class="cmd"><code>ollama pull minicpm-v4.6</code><button class="icon-btn copy-btn" data-copy="ollama pull minicpm-v4.6" title="Copy"><i data-icon="copy"></i></button></div>
+          </li>
+          <li>
+            <b>Run the model</b>, then click <b>Re-check</b>:
+            <div class="cmd"><code>ollama run minicpm-v4.6</code><button class="icon-btn copy-btn" data-copy="ollama run minicpm-v4.6" title="Copy"><i data-icon="copy"></i></button></div>
+          </li>
+        </ol>
       </div>
       <div class="modal-footer">
         <label class="check"><input type="checkbox" id="setupShowOnLaunch" checked /><span>Show at launch if setup is incomplete</span></label>

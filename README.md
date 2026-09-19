@@ -30,7 +30,7 @@
 - **Batch sequencer:** start, pause or resume captioning. It skips images that already have a caption and has per-image regenerate and stop buttons.
 - **Batch rename:** `prefix_001`, `prefix_002`, … with a live preview.
 - **Export:** paired `name.png|jpg` and `name.txt` files written straight to a folder or packed into a single ZIP. You get an OS notification and an *Open Folder* shortcut when it finishes.
-- **Setup Assistant:** detects Ollama and the model, starts Ollama, downloads the model with a progress bar, and on Windows downloads and launches the official Ollama installer.
+- **Setup Assistant:** shows whether Ollama is running and the model is downloaded, with three short steps (install Ollama, pull the model, run it) and copyable commands.
 - **Light, dark and system themes**, a borderless window, collapsible sidebar panels, and a grid or list view.
 
 <table>
@@ -64,7 +64,11 @@ Get the latest build from the **Releases** page:
 > [!NOTE]
 > The builds aren't code-signed, so Windows SmartScreen may show *"Windows protected your PC"*. Click **More info → Run anyway**. For macOS and Linux, [build from source](#build-from-source).
 
-On first launch, the **Setup Assistant** helps you install Ollama and download the captioning model if they're missing.
+On first launch, if Ollama or the model is missing, the **Setup Assistant** shows the steps to install them:
+
+1. Install Ollama from [ollama.com/download](https://ollama.com/download).
+2. Open a terminal and run `ollama pull minicpm-v4.6`.
+3. Run `ollama run minicpm-v4.6`, then click **Re-check**.
 
 ## Requirements
 
@@ -131,7 +135,6 @@ npm run dist:linux   # AppImage
 
 ```
 ├── main.js             # Main process: window, dialogs, file I/O, Ollama streaming proxy, export (JSZip), theme
-├── ollama-setup.js     # Setup Assistant backend: detect/start/install Ollama, pull models
 ├── preload.js          # contextBridge → window.electronAPI
 ├── renderer/
 │   ├── index.html      # Layout, dialogs, card template
@@ -154,8 +157,8 @@ npm run dist:linux   # AppImage
 
 | Problem | Fix |
 | --- | --- |
-| "Ollama Offline" banner | Open the Setup Assistant (🔧 in the title bar) and click **Start Ollama**, or run `ollama serve`. |
-| "Model not downloaded" | Click **Download minicpm-v4.6** in the Setup Assistant, or run `ollama pull minicpm-v4.6`. |
+| "Ollama Offline" banner | Start Ollama (open the Ollama app, or run `ollama run minicpm-v4.6` in a terminal), then click **Re-check** in the Setup Assistant (🔧 in the title bar). |
+| "Model not downloaded" | Run `ollama pull minicpm-v4.6` in a terminal, then click **Re-check**. |
 | Ollama runs on another machine | Change **Ollama host** in *Caption Settings*, for example `http://192.168.1.20:11434`. |
 | Captions are slow | Lower *Send size (px)* in *Caption Settings*. Images are downscaled before they're sent to the model. |
 | Webcam doesn't start | Allow camera access for the app in your OS privacy settings. |

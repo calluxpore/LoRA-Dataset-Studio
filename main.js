@@ -10,12 +10,12 @@ const {
   Notification,
   systemPreferences,
   nativeTheme,
+  clipboard,
 } = require('electron');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs/promises');
 const JSZip = require('jszip');
-const { registerOllamaSetup } = require('./ollama-setup');
 
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.bmp']);
 const DEFAULT_OLLAMA_HOST = 'http://localhost:11434';
@@ -555,8 +555,16 @@ ipcMain.handle('export-cancel', (_e, { sessionId }) => {
   return true;
 });
 
-// ---------------------------------------------------------------------------
-// Setup assistant (detect / start / install Ollama, pull models)
-// ---------------------------------------------------------------------------
+// Setup assistant: copy commands with the native clipboard (works even if the window isn't focused).
+ipcMain.handle('copy-text', (_e, text) => {
+  if (typeof text !== 'string') return false;
+  clipboard.writeText(text);
+  return true;
+});
 
-registerOllamaSetup({ getWindow: () => mainWindow, normalizeHost, fetchWithTimeout });
+// Setup assistant links (e.g. ollama.com/download) open in the default browser.
+ipcMain.handle('open-external', async (_e, url) => {
+  if (typeof url !== 'string' || !/^https:\/\//i.test(url)) return { ok: false };
+  await shell.openExternal(url);
+  return { ok: true };
+});

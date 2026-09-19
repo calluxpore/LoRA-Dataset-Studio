@@ -49,15 +49,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onCaptionThinking: (cb) => subscribe('caption-thinking', cb),
 
   // Setup assistant
-  ollamaDetect: (host) => ipcRenderer.invoke('ollama-detect', host),
-  ollamaStart: (host) => ipcRenderer.invoke('ollama-start', host),
-  ollamaInstall: () => ipcRenderer.invoke('ollama-install'),
-  ollamaInstallCancel: () => ipcRenderer.invoke('ollama-install-cancel'),
-  ollamaPull: (args) => ipcRenderer.invoke('ollama-pull', args),
-  ollamaPullCancel: (model) => ipcRenderer.invoke('ollama-pull-cancel', model),
-  onSetupProgress: (cb) => subscribe('setup-progress', cb),
-  onPullProgress: (cb) => subscribe('pull-progress', cb),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  copyText: (text) => ipcRenderer.invoke('copy-text', text),
 
   // Export
   exportBegin: (opts) => ipcRenderer.invoke('export-begin', opts),

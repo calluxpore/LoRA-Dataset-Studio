@@ -32,7 +32,6 @@
     "files": [
       "main.js",
       "preload.js",
-      "ollama-setup.js",
       "renderer/**/*",
       "build/icon.png",
       "package.json"
